@@ -1,0 +1,135 @@
+export const APP_NAME = 'Service Marketplace';
+
+export const API_VERSION = 'v1';
+
+export const ROLES = {
+  USER: 'USER',
+  BUDDY: 'BUDDY',
+  ADMIN: 'ADMIN',
+} as const;
+
+export const BOOKING_STATUSES = {
+  PENDING: 'PENDING',
+  ASSIGNED: 'ASSIGNED',
+  ACCEPTED: 'ACCEPTED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  FAILED: 'FAILED',
+} as const;
+
+export const PAYMENT_METHODS = {
+  PREPAID: 'PREPAID',
+  CASH: 'CASH',
+} as const;
+
+export const PAYMENT_STATUSES = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  REFUNDED: 'REFUNDED',
+} as const;
+
+export const ASSIGNMENT_STATUSES = {
+  PENDING: 'PENDING',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export const NOTIFICATION_TYPES = {
+  BOOKING_CREATED: 'BOOKING_CREATED',
+  BOOKING_ASSIGNED: 'BOOKING_ASSIGNED',
+  BOOKING_ACCEPTED: 'BOOKING_ACCEPTED',
+  BOOKING_STARTED: 'BOOKING_STARTED',
+  BOOKING_COMPLETED: 'BOOKING_COMPLETED',
+  BOOKING_CANCELLED: 'BOOKING_CANCELLED',
+  PAYMENT_RECEIVED: 'PAYMENT_RECEIVED',
+  RATING_RECEIVED: 'RATING_RECEIVED',
+  GENERAL: 'GENERAL',
+  AUTH_VERIFICATION: 'AUTH_VERIFICATION',
+  AUTH_PASSWORD_RESET: 'AUTH_PASSWORD_RESET',
+} as const;
+
+export const DEFAULT_CONFIG = {
+  MAX_BUDDY_RADIUS: 10, // km
+  COOLDOWN_DAYS: 7, // days
+  MIN_GAP_MINUTES: 30, // minutes
+  OTP_LENGTH: 6,
+  OTP_EXPIRY_MINUTES: 10,
+  MAX_OTP_ATTEMPTS: 3,
+  LOCATION_UPDATE_INTERVAL: 15000, // 15 seconds
+} as const;
+
+export const PAGINATION = {
+  DEFAULT_PAGE: 1,
+  DEFAULT_LIMIT: 10,
+  MAX_LIMIT: 100,
+} as const;
+
+export const CURRENCIES = {
+  INR: 'INR',
+  USD: 'USD',
+  EUR: 'EUR',
+} as const;
+
+export const CURRENCY_SYMBOLS = {
+  INR: '₹',
+  USD: '$',
+  EUR: '€',
+} as const;
+
+export const TAX_RATE = 0.18; // 18% GST for India
+
+export const DAYS_OF_WEEK = [
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+] as const;
+
+export const HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_SERVER_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503,
+} as const;
+
+export const ERROR_CODES = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  AUTHENTICATION_ERROR: 'AUTHENTICATION_ERROR',
+  AUTHORIZATION_ERROR: 'AUTHORIZATION_ERROR',
+  NOT_FOUND: 'NOT_FOUND',
+  CONFLICT: 'CONFLICT',
+  RATE_LIMIT: 'RATE_LIMIT',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+} as const;
+
+export const REGEX_PATTERNS = {
+  EMAIL: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  PHONE: /^\+?[1-9]\d{1,14}$/,
+  PASSWORD: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+  OTP: /^\d{6}$/,
+  TIME: /^([01]\d|2[0-3]):([0-5]\d)$/,
+  POSTAL_CODE: /^\d{6}$/,
+};
+
+export const FILE_UPLOAD = {
+  MAX_SIZE: 5 * 1024 * 1024, // 5MB
+  ALLOWED_IMAGE_TYPES: ['image/jpeg', 'image/png', 'image/webp'],
+  ALLOWED_DOCUMENT_TYPES: ['application/pdf'],
+};

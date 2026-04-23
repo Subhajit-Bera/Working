@@ -1,0 +1,21 @@
+FROM node:18-slim
+
+WORKDIR /app
+
+# copy root package files and install only production deps (workspaces will be installed in container)
+COPY package*.json ./
+COPY servanza-services/api/package*.json ./servanza-services/api/
+COPY .npmrc ./
+
+RUN npm install --legacy-peer-deps
+
+# copy rest of repo
+COPY . .
+
+WORKDIR /app/servanza-services/api
+RUN npm run prisma:generate || true
+# build if build script exists
+RUN npm run build --if-present || true
+
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

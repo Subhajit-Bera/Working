@@ -1,0 +1,426 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  ARRIVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum AuthProvider {
+  GOOGLE
+  EMAIL
+  PHONE
+}
+
+enum BookingStatus {
+  PENDING
+  ASSIGNED
+  ACCEPTED
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum NotificationType {
+  BOOKING_CREATED
+  BOOKING_ASSIGNED
+  BOOKING_ACCEPTED
+  BOOKING_STARTED
+  BOOKING_COMPLETED
+  BOOKING_CANCELLED
+  PAYMENT_RECEIVED
+  RATING_RECEIVED
+  GENERAL
+  // Added for auth
+  AUTH_VERIFICATION
+  AUTH_PASSWORD_RESET
+}
+
+enum PaymentMethod {
+  PREPAID
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum UserRole {
+  USER
+  BUDDY
+  ADMIN
+}
+
+model Address {
+  id               String   @id @default(cuid())
+  userId           String
+  label            String   // "Home", "Work", "Other"
+  formattedAddress String
+  streetAddress    String?
+  city             String?
+  state            String?
+  postalCode       String?
+  country          String   @default("IN")
+  location         Unsupported("geography(Point, 4326)")?
+  latitude         Float
+  longitude        Float
+  isDefault        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings         Booking[]
+  @@index([userId])
+  @@index([location], type: Gist) // Gist index for PostGIS
+  @@map("addresses")
+}
+
+model Assignment {
+  id              String           @id @default(cuid())
+  bookingId       String
+  buddyId         String
+  status          AssignmentStatus @default(PENDING)
+  estimatedEtaMins Int?
+  distanceKm      Float?
+  assignedAt      DateTime         @default(now())
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  rejectionReason String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  booking         Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  buddy           Buddy            @relation(fields: [buddyId], references: [id], onDelete: Cascade)
+  auditLogs       AuditLog[]
+  @@index([bookingId])
+  @@index([buddyId])
+  @@index([status])
+  @@index([assignedAt])
+  @@map("assignments")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  bookingId    String?
+  assignmentId String?
+  action       String   // e.g., "BOOKING_CREATED", "ASSIGNMENT_ACCEPTED"
+  entity       String   // e.g., "Booking", "Assignment"
+  entityId     String
+  changes      Json?    // Old and new values
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  assignment   Assignment?  @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  @@index([userId])
+  @@index([bookingId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Booking {
+  id              String         @id @default(cuid())
+  userId          String
+  serviceId       String
+  addressId       String
+  scheduledStart  DateTime       // When the service should start
+  scheduledEnd    DateTime       // When the service should end
+  isImmediate     Boolean        @default(false) // If true, ASAP booking
+  status          BookingStatus  @default(PENDING)
+  paymentMethod   PaymentMethod  @default(PREPAID)
+  paymentStatus   PaymentStatus  @default(PENDING)
+  price           Float
+  taxAmount       Float          @default(0)
+  discountAmount  Float          @default(0)
+  totalAmount     Float
+  currency        String         @default("INR")
+  specialInstructions String?
+  metadata        Json?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancellationReason String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service         Service        @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  address         Address        @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  assignments     Assignment[]
+  otpVerification OtpVerification?
+  transactions    Transaction[]
+  reviews         Review[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  @@index([userId])
+  @@index([serviceId])
+  @@index([status])
+  @@index([scheduledStart])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+model Buddy {
+  id                String            @id // Buddy.id references User.id (one-to-one)
+  user              User              @relation(fields: [id], references: [id], onDelete: Cascade)
+  bio               String?
+  skills            String[]          @default([])
+  experience        Int?              // Years of experience
+  languages         String[]          @default([])
+  rating            Float             @default(0)
+  totalRatings      Int               @default(0)
+  totalJobs         Int               @default(0)
+  completionRate    Float             @default(0)
+  isAvailable       Boolean           @default(false)
+  isOnline          Boolean           @default(false)
+  maxRadius         Int               @default(10) // km
+  lastKnownLocation Unsupported("geography(Point, 4326)")?
+  lastLocationTime  DateTime?
+  lastLocationLat   Float?
+  lastLocationLong  Float?
+  workingAreas      Json?             // Array of polygon coordinates
+  isVerified        Boolean           @default(false)
+  verifiedAt        DateTime?
+  documentsJson     Json?             // ID proof, address proof, etc.
+  totalEarnings     Float             @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  assignments       Assignment[]
+  schedules         BuddySchedule[]
+  locationEvents    LocationEvent[]
+  reviews           Review[]
+  @@index([lastKnownLocation], type: Gist) // Gist index for PostGIS
+  @@map("buddies")
+}
+
+model BuddySchedule {
+  id          String     @id @default(cuid())
+  buddyId     String
+  dayOfWeek   DayOfWeek
+  startTime   String     // Format: "HH:MM" (e.g., "09:00")
+  endTime     String     // Format: "HH:MM" (e.g., "18:00")
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  buddy       Buddy      @relation(fields: [buddyId], references: [id], onDelete: Cascade)
+  @@index([buddyId])
+  @@index([dayOfWeek])
+  @@map("buddy_schedules")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  slug        String    @unique
+  icon        String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  services    Service[]
+  @@map("categories")
+}
+
+model Config {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+  @@map("config")
+}
+
+model DailyStats {
+  id                String   @id @default(cuid())
+  date              DateTime @unique @db.Date
+  totalBookings     Int      @default(0)
+  completedBookings Int      @default(0)
+  cancelledBookings Int      @default(0)
+  totalRevenue      Float    @default(0)
+  newUsers          Int      @default(0)
+  activeBuddies     Int      @default(0)
+  createdAt         DateTime @default(now())
+  @@map("daily_stats")
+}
+
+model LocationEvent {
+  id        String   @id @default(cuid())
+  buddyId   String
+  location  Unsupported("geography(Point, 4326)")?
+  latitude  Float
+  longitude Float
+  accuracy  Float?   // in meters
+  timestamp DateTime @default(now())
+  metadata  Json?    // Speed, heading, altitude, etc.
+  buddy     Buddy    @relation(fields: [buddyId], references: [id], onDelete: Cascade)
+  @@index([buddyId])
+  @@index([timestamp])
+  @@index([location], type: Gist) // Gist index for PostGIS
+  @@map("location_events")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?            // Additional data
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  bookingId String?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking   Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model OtpVerification {
+  id          String    @id @default(cuid())
+  bookingId   String    @unique
+  phone       String
+  otpHash     String    // Hashed OTP for security
+  otp         String?   // Store plaintext only in dev/test
+  expiresAt   DateTime
+  isUsed      Boolean   @default(false)
+  usedAt      DateTime?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  createdAt   DateTime  @default(now())
+  booking     Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  @@index([bookingId])
+  @@index([phone])
+  @@index([expiresAt])
+  @@map("otp_verifications")
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  bookingId   String
+  userId      String
+  buddyId     String
+  rating      Int      // 1-5
+  comment     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buddy       Buddy    @relation(fields: [buddyId], references: [id], onDelete: Cascade)
+  @@unique([bookingId, userId]) // One review per booking per user
+  @@index([buddyId])
+  @@map("reviews")
+}
+
+model Service {
+  id            String    @id @default(cuid())
+  categoryId    String
+  title         String
+  description   String?
+  durationMins  Int       // Estimated duration in minutes
+  basePrice     Float
+  currency      String    @default("INR")
+  imageUrl      String?
+  isActive      Boolean   @default(true)
+  metadata      Json?     // Additional service-specific data
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  category      Category  @relation(fields: [categoryId], references: [id])
+  bookings      Booking[]
+  @@index([categoryId])
+  @@index([isActive])
+  @@map("services")
+}
+
+model Transaction {
+  id                 String        @id @default(cuid())
+  bookingId          String
+  userId             String
+  amount             Float
+  currency           String        @default("INR")
+  method             PaymentMethod
+  status             PaymentStatus @default(PENDING)
+  stripePaymentId    String?       @unique // Kept for reference
+  stripePaymentIntent String?
+  razorpayOrderId    String?       @unique
+  razorpayPaymentId  String?
+  metadata           Json?
+  failureReason      String?
+  refundedAmount     Float?
+  refundedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  booking            Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  user               User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([bookingId])
+  @@index([userId])
+  @@index([status])
+  @@index([stripePaymentId])
+  @@index([razorpayOrderId])
+  @@map("transactions")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String?        @unique
+  phone         String?        @unique
+  name          String
+  authProvider  AuthProvider   @default(EMAIL)
+  firebaseUid   String?        @unique
+  passwordHash  String?
+  role          UserRole       @default(USER)
+  isActive      Boolean        @default(true)
+  emailVerified Boolean        @default(false)
+  phoneVerified Boolean        @default(false)
+  profileImage  String?
+  deviceTokens  String[]       @default([]) // FCM tokens
+  metadata      Json?          // Flexible JSON for additional data (e.g., reset tokens)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  lastLoginAt   DateTime?
+  addresses     Address[]
+  bookings      Booking[]
+  buddy         Buddy?
+  reviews       Review[]
+  notifications Notification[]
+  transactions  Transaction[]
+  auditLogs     AuditLog[]
+  @@index([email])
+  @@index([phone])
+  @@index([firebaseUid])
+  @@index([role])
+  @@map("users")
+}

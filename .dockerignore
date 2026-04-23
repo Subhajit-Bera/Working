@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+.dockerignore
+
+# Dependencies
+node_modules
+services/*/node_modules
+packages/*/node_modules
+
+# Build output
+dist
+packages/*/dist
+services/*/dist
+
+# Logs & Env
+logs
+*.log
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

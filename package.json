@@ -1,0 +1,55 @@
+{
+  "name": "service-marketplace",
+  "version": "1.0.0",
+  "description": "Service Marketplace Platform - Monorepo",
+  "private": true,
+  "workspaces": [
+    "servanza-services/api",
+    "servanza-services/workers",
+    "servanza-packages/shared"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=servanza-services/api",
+    "dev:workers": "npm run dev --workspace=servanza-services/workers",
+    "dev:all": "concurrently \"npm run dev --workspace=servanza-services/api\" \"npm run dev --workspace=servanza-services/workers\"",
+    "build:shared": "npm run build --workspace=servanza-packages/shared",
+    "build:api": "npm run build --workspace=servanza-services/api",
+    "build:workers": "npm run build --workspace=servanza-services/workers",
+    "build": "npm run build:shared && npm run build:api && npm run build:workers",
+    "prisma:gen:api": "npx prisma generate --schema=servanza-services/api/prisma/schema.prisma",
+    "prisma:gen:workers": "npx prisma generate --schema=servanza-services/workers/prisma/schema.prisma",
+    "prisma:generate": "npx prisma generate --schema=prisma/schema.prisma",
+    "prisma:migrate": "npx prisma migrate dev --schema=prisma/schema.prisma",
+    "prisma:migrate:deploy": "npx prisma migrate deploy --schema=prisma/schema.prisma",
+    "prisma:studio": "npx prisma studio --schema=prisma/schema.prisma",
+    "prisma:seed": "npx run prisma:seed --schema=servanza-services/api",
+    "prisma:reset": "npx prisma migrate reset --schema=prisma/schema.prisma",
+    "prisma:push": "npx prisma db push --schema=prisma/schema.prisma",
+    "prisma:validate": "npx prisma validate --schema=prisma/schema.prisma",
+    "prisma:format": "npx prisma format --schema=prisma/schema.prisma",
+    "clean": "rm -rf node_modules servanza-services/*/node_modules servanza-packages/*/node_modules servanza-packages/*/dist servanza-services/*/dist",
+    "test": "jest"
+  },
+  "prisma": {
+    "seed": "ts-node servanza-services/api/prisma/seed.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "jest": "^30.2.0",
+    "prisma": "^5.7.0",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "notes": "After cloning run `npm install` at root to install workspaces, then run `npx prisma generate` in each workspace before starting.",
+  "dependencies": {
+    "@opentelemetry/auto-instrumentations-node": "^0.68.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.210.0",
+    "@opentelemetry/sdk-node": "^0.210.0",
+    "@prisma/client": "^5.7.0",
+    "nodemailer": "^7.0.12"
+  }
+}

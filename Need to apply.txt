@@ -1,0 +1,9 @@
+Run Prisma migration (if not done):
+bash
+npx prisma migrate dev --name add_resilience_tables
+Add to DATABASE_URL:
+?connection_limit=25&pool_timeout=10
+Add Redis persistence (docker-compose.yml):
+yaml
+redis:
+  command: redis-server --appendonly yes

@@ -1,0 +1,94 @@
+# Docker Compose Configuration for Servanza Services
+# Remove the version field as it's obsolete in newer Docker Compose versions
+
+services:
+  # PostgreSQL Database with PostGIS Extension
+  postgres:
+    image: postgis/postgis:15-3.4-alpine
+    container_name: servanza-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: servanza
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: servanza-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # API Service (optional - for production deployment)
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: servanza-api
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/servanza?schema=public
+      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./servanza-services/api:/app/servanza-services/api
+      - /app/node_modules
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # Workers Service (optional - for production deployment)
+  workers:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.workers
+    container_name: servanza-workers
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/servanza?schema=public
+      - REDIS_URL=redis://redis:6379
+      - PORT=3002
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./servanza-services/workers:/app/servanza-services/workers
+      - /app/node_modules
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
