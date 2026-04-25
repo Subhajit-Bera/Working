@@ -32,6 +32,7 @@ const upload = multer({
 });
 
 // Public routes - order matters! More specific routes first
+router.get('/trending', serviceController.getTrendingServices);
 router.get('/', serviceController.getServices);
 router.get('/categories', serviceController.getCategories);
 router.get('/categories/:slug', serviceController.getCategoryBySlug);
@@ -81,9 +82,18 @@ router.post(
   serviceController.uploadServiceImage
 );
 
+router.post(
+  '/:id/images',
+  authenticate,
+  authorize(UserRole.ADMIN),
+  upload.array('images', 10), // Allow up to 10 images at once
+  serviceController.uploadServiceImages
+);
+
 // Service reviews (public)
 router.get('/:id/reviews', serviceController.getServiceReviews);
 
+router.get('/:id/similar', serviceController.getSimilarServices);
 router.get('/:id', serviceController.getServiceById);
 router.put(
   '/:id',

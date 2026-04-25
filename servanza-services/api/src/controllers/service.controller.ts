@@ -144,6 +144,56 @@ export class ServiceController {
     }
   }
 
+  async getTrendingServices(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Find top 4 services by number of bookings (using group by)
+      const popularBookings = await prisma.booking.groupBy({
+        by: ['serviceId'],
+        _count: {
+          id: true,
+        },
+        orderBy: {
+          _count: {
+            id: 'desc',
+          },
+        },
+        take: 4,
+      });
+
+      const serviceIds = popularBookings.map((b) => b.serviceId);
+
+      let trendingServices = [];
+      if (serviceIds.length > 0) {
+        trendingServices = await prisma.service.findMany({
+          where: {
+            id: { in: serviceIds },
+            isActive: true,
+          },
+          include: {
+            category: {
+              select: { id: true, name: true, slug: true },
+            },
+          },
+        });
+      } else {
+        // Fallback if no bookings: just return 4 active services
+        trendingServices = await prisma.service.findMany({
+          where: { isActive: true },
+          take: 4,
+          include: {
+            category: {
+              select: { id: true, name: true, slug: true },
+            },
+          },
+        });
+      }
+
+      res.json({ success: true, data: trendingServices });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getServiceById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -174,6 +224,38 @@ export class ServiceController {
       };
 
       res.json({ success: true, data: enrichedService });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getSimilarServices(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const service = await prisma.service.findUnique({
+        where: { id },
+        select: { categoryId: true },
+      });
+
+      if (!service) {
+        throw new ApiError(404, 'Service not found');
+      }
+
+      const similarServices = await prisma.service.findMany({
+        where: {
+          categoryId: service.categoryId,
+          id: { not: id },
+          isActive: true,
+        },
+        take: 4,
+        include: {
+          category: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      });
+
+      res.json({ success: true, data: similarServices });
     } catch (error) {
       next(error);
     }
@@ -263,7 +345,7 @@ export class ServiceController {
   }
 
   /**
-   * Upload service image
+   * Upload service image (Single)
    */
   async uploadServiceImage(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -291,6 +373,53 @@ export class ServiceController {
       next(error);
     }
   }
+
+  /**
+   * Upload service images (Multiple)
+   */
+  async uploadServiceImages(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+
+      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+        throw new ApiError(400, 'No files uploaded');
+      }
+
+      // Get current service to append to existing imageUrls
+      const currentService = await prisma.service.findUnique({
+        where: { id },
+        select: { imageUrls: true },
+      });
+
+      if (!currentService) {
+        throw new ApiError(404, 'Service not found');
+      }
+
+      // Upload all files to R2 in parallel
+      const uploadPromises = req.files.map((file: Express.Multer.File) => 
+        storageService.uploadServiceAsset('service', id, file)
+      );
+      const newImageUrls = await Promise.all(uploadPromises);
+
+      // Combine existing and new URLs
+      const combinedImageUrls = [...(currentService.imageUrls || []), ...newImageUrls];
+
+      // Update service in database
+      const service = await prisma.service.update({
+        where: { id },
+        data: { imageUrls: combinedImageUrls },
+      });
+
+      res.json({
+        success: true,
+        data: { imageUrls: service.imageUrls },
+        message: 'Service images uploaded successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
 
   /**
    * Upload category icon

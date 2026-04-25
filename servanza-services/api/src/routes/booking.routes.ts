@@ -17,6 +17,7 @@ const bookingController = new BookingController();
 router.use(authenticate);
 
 // Booking CRUD
+router.post('/validate-cart', bookingController.validateCart);
 router.post('/', validateRequest(createBookingSchema), bookingController.createBooking);
 router.get('/', bookingController.getBookings);
 router.get('/:id', bookingController.getBookingById);

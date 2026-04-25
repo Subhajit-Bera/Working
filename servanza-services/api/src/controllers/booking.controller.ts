@@ -9,6 +9,49 @@ const bookingService = new BookingService();
 const otpService = new OTPService();
 
 export class BookingController {
+  async validateCart(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { items, total } = req.body;
+      
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        throw new ApiError(400, 'Cart is empty or invalid format');
+      }
+
+      // Fetch all services from DB
+      const serviceIds = items.map((item: any) => item.serviceId);
+      const services = await prisma.service.findMany({
+        where: { id: { in: serviceIds } },
+      });
+
+      let calculatedSubtotal = 0;
+      
+      for (const item of items) {
+        const dbService = services.find(s => s.id === item.serviceId);
+        if (!dbService) {
+          throw new ApiError(400, `Service ${item.serviceId} not found`);
+        }
+        if (!dbService.isActive) {
+          throw new ApiError(400, `Service ${dbService.title} is currently unavailable`);
+        }
+        // Multiply by quantity if applicable (assuming item.quantity exists)
+        calculatedSubtotal += dbService.basePrice * (item.quantity || 1);
+      }
+
+      // Re-calculate tax and total
+      const taxAmount = calculatedSubtotal * 0.18;
+      const calculatedTotal = calculatedSubtotal + taxAmount;
+
+      // Allow small floating point variations (e.g., within 1 unit of currency)
+      if (Math.abs(calculatedTotal - total) > 1) {
+        throw new ApiError(400, 'Cart totals mismatch. Prices may have been updated.');
+      }
+
+      res.json({ success: true, message: 'Cart validated successfully', data: { calculatedTotal } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async createBooking(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;

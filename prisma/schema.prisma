@@ -441,6 +441,7 @@ model Service {
   basePrice     Float
   currency      String    @default("INR")
   imageUrl      String?
+  imageUrls     String[]  @default([])
   isActive      Boolean   @default(true)
   averageRating Float     @default(0)
   totalReviews  Int       @default(0)

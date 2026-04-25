@@ -331,6 +331,66 @@ export class UserController {
     }
   }
 
+  // Notification Preferences
+  async getNotificationPreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { metadata: true },
+      });
+
+      if (!user) {
+        throw new ApiError(404, 'User not found');
+      }
+
+      const prefs = (user.metadata as any)?.notificationPreferences || {
+        push: true,
+        email: true,
+        sms: false,
+        marketing: false,
+      };
+
+      res.json({ success: true, data: prefs });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateNotificationPreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const newPrefs = req.body;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { metadata: true },
+      });
+
+      if (!user) {
+        throw new ApiError(404, 'User not found');
+      }
+
+      const existingMetadata = (user.metadata as Record<string, any>) || {};
+      const updatedMetadata = {
+        ...existingMetadata,
+        notificationPreferences: {
+          ...(existingMetadata.notificationPreferences || {}),
+          ...newPrefs,
+        },
+      };
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { metadata: updatedMetadata },
+      });
+
+      res.json({ success: true, data: updatedMetadata.notificationPreferences, message: 'Preferences updated' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // Favorites / Wishlist
   async getFavorites(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

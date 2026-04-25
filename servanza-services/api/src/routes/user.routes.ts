@@ -16,6 +16,8 @@ router.use(authenticate);
 // Profile management
 router.get('/me', userController.getProfile);
 router.put('/me', validateRequest(updateProfileSchema), userController.updateProfile);
+router.get('/me/notification-preferences', userController.getNotificationPreferences);
+router.patch('/me/notification-preferences', userController.updateNotificationPreferences);
 router.delete('/me', userController.deleteAccount);
 
 // Address management
