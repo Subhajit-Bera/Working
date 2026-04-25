@@ -6,7 +6,7 @@ const redisConfig = {
   port: parseInt(process.env.REDIS_PORT || '6379'),
   // password: process.env.REDIS_PASSWORD,
   db: parseInt(process.env.REDIS_DB || '0'),
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: null, // REQUIRED by BullMQ — numeric values crash workers on Redis blips
   enableReadyCheck: true,
   retryStrategy(times: number) {
     const delay = Math.min(times * 50, 2000);

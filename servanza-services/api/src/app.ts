@@ -11,8 +11,23 @@ import routes from './routes';
 const createApp = (): Express => {
   const app = express();
 
-  // Security middleware
-  app.use(helmet());
+  // Security middleware — strict config for a headless JSON API
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],   // API never serves HTML — block everything
+          frameAncestors: ["'none'"],
+        },
+      },
+      referrerPolicy: { policy: 'no-referrer' },
+      hsts: {
+        maxAge: 31536000,          // 1 year
+        includeSubDomains: true,
+        preload: true,
+      },
+    })
+  );
   app.use(
     cors({
       origin: process.env.CORS_ORIGINS?.split(',') || '*',
@@ -23,7 +38,7 @@ const createApp = (): Express => {
   // Use JSON parser for all non-webhook routes
   app.use(
     express.json({
-      limit: '10mb',
+      limit: '1mb',
       verify: (_req: Request, _res: Response, _buf: Buffer) => {
         // HACK: We need to access req.originalUrl, but Express.json doesn't expose it.
         // We assume that if the 'stripe-signature' header is present, it's a Stripe webhook.
@@ -32,7 +47,7 @@ const createApp = (): Express => {
       },
     })
   );
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // Compression
   app.use(compression());

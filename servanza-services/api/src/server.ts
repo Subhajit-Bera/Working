@@ -12,6 +12,15 @@ import { initializeRazorpay } from './config/razorpay';
 
 const PORT = process.env.PORT || 3000;
 
+// ── Fail-fast: validate critical env vars before anything starts ──
+const REQUIRED_ENV_VARS = ['JWT_SECRET'] as const;
+for (const envVar of REQUIRED_ENV_VARS) {
+  if (!process.env[envVar]) {
+    console.error(`FATAL: Required environment variable ${envVar} is not set. Aborting startup.`);
+    process.exit(1);
+  }
+}
+
 const startServer = async () => {
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
   while (true) {
