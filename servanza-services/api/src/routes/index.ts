@@ -11,6 +11,7 @@ import buddyDocumentsRoutes from './buddy-documents.routes';
 import couponRoutes from './coupon.routes';
 import promotionRoutes from './promotion.routes';
 import reviewRoutes from './review.routes';
+import chatRoutes from './chat.routes';
 
 
 const router = Router();
@@ -32,6 +33,7 @@ router.use('/admin', adminRoutes);
 router.use('/buddy-documents', buddyDocumentsRoutes);
 router.use('/coupons', couponRoutes);
 router.use('/reviews', reviewRoutes);
+router.use('/', chatRoutes); // Chat routes use /bookings/:bookingId/messages paths
 
 // Health check
 router.get('/health', (_req: Request, res: Response) => {

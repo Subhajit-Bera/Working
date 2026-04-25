@@ -212,6 +212,8 @@ model Booking {
   reviews         Review[]
   notifications   Notification[]
   auditLogs       AuditLog[]
+  chatMessages    ChatMessage[]
+  callLogs        CallLog[]
   @@index([userId])
   @@index([serviceId])
   @@index([status])
@@ -514,6 +516,9 @@ model User {
   auditLogs     AuditLog[]
   offlineMessages OfflineMessage[] @relation("OfflineMessages")
   favorites     Favorite[]
+  chatMessages  ChatMessage[]  @relation("ChatMessages")
+  callerCalls   CallLog[]      @relation("CallerCalls")
+  receiverCalls CallLog[]      @relation("ReceiverCalls")
   @@index([email])
   @@index([phone])
   @@index([firebaseUid])
@@ -646,4 +651,64 @@ model Promotion {
   @@map("promotions")
 }
 
+// ─── Chat & Call Models ─────────────────────────────────────────────
 
+enum ChatMessageType {
+  TEXT
+  IMAGE
+  SYSTEM  // "Buddy has arrived", "Call ended", etc.
+}
+
+model ChatMessage {
+  id         String          @id @default(cuid())
+  bookingId  String
+  senderId   String          // User.id (works for both customer and buddy)
+  content    String
+  type       ChatMessageType @default(TEXT)
+  mediaUrl   String?         // For IMAGE type messages
+  isRead     Boolean         @default(false)
+  readAt     DateTime?
+  createdAt  DateTime        @default(now())
+
+  booking    Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender     User            @relation("ChatMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+  @@index([senderId])
+  @@map("chat_messages")
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  CONNECTED
+  ENDED
+  MISSED
+  REJECTED
+}
+
+model CallLog {
+  id           String     @id @default(cuid())
+  bookingId    String
+  callerId     String
+  receiverId   String
+  type         CallType   @default(VOICE)
+  status       CallStatus @default(RINGING)
+  startedAt    DateTime?
+  endedAt      DateTime?
+  durationSecs Int?
+  createdAt    DateTime   @default(now())
+
+  booking      Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  caller       User       @relation("CallerCalls", fields: [callerId], references: [id])
+  receiver     User       @relation("ReceiverCalls", fields: [receiverId], references: [id])
+
+  @@index([bookingId])
+  @@index([callerId])
+  @@index([receiverId])
+  @@map("call_logs")
+}

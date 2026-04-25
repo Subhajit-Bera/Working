@@ -7,6 +7,8 @@ import { verifySocketToken } from './middleware/auth.middleware';
 import { handleConnection } from './handlers/connection.handler';
 import { handleLocationEvents } from './handlers/location.handler';
 import { handleJobEvents } from './handlers/job.handler';
+import { handleChatEvents } from './handlers/chat.handler';
+import { handleCallEvents } from './handlers/call.handler';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../config/database';
 
@@ -42,6 +44,8 @@ export const initSocketIO = (httpServer: HTTPServer): Server => {
     handleConnection(socket);
     handleLocationEvents(socket, io);
     handleJobEvents(socket, io);
+    handleChatEvents(socket, io);
+    handleCallEvents(socket, io);
 
     socket.on('disconnect', (reason: any) => {
       logger.info(`Client disconnected: ${socket.id}, User: ${socket.data.userId}, Reason: ${reason}`);
