@@ -958,11 +958,8 @@ export class AuthService {
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          metadata: {
-            ...(user.metadata as any),
-            resetTokenHash,
-            resetTokenExpiry: resetTokenExpiry.toISOString(),
-          },
+          resetTokenHash,
+          resetTokenExpiry,
         },
       });
 
@@ -982,12 +979,10 @@ export class AuthService {
     try {
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
+      // Use indexed column lookup instead of JSON path search
       const user = await prisma.user.findFirst({
         where: {
-          metadata: {
-            path: ['resetTokenHash'],
-            equals: tokenHash,
-          },
+          resetTokenHash: tokenHash,
         },
       });
 
@@ -995,10 +990,7 @@ export class AuthService {
         throw new ApiError(400, 'Invalid or expired reset token');
       }
 
-      const metadata = user.metadata as any;
-      const resetTokenExpiry = new Date(metadata.resetTokenExpiry);
-
-      if (resetTokenExpiry < new Date()) {
+      if (!user.resetTokenExpiry || user.resetTokenExpiry < new Date()) {
         throw new ApiError(400, 'Reset token has expired');
       }
 
@@ -1008,11 +1000,8 @@ export class AuthService {
         where: { id: user.id },
         data: {
           passwordHash,
-          metadata: {
-            ...(user.metadata as any),
-            resetTokenHash: null,
-            resetTokenExpiry: null,
-          },
+          resetTokenHash: null,
+          resetTokenExpiry: null,
         },
       });
 

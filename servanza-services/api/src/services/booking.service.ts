@@ -66,11 +66,14 @@ export class BookingService {
       const totalAmount = price + taxAmount;
 
       // Check if booking is within service hours (9 AM - 10 PM IST)
-      // Note: process.env.TZ = 'Asia/Kolkata' is set in server.ts
+      // Uses explicit IST conversion — does NOT rely on process.env.TZ
       const isWithinServiceHours = (): boolean => {
         const now = new Date();
-        const hour = now.getHours();
-        const minute = now.getMinutes();
+        // Convert UTC to IST using Intl (always available in Node 14+)
+        const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+        const istDate = new Date(istString);
+        const hour = istDate.getHours();
+        const minute = istDate.getMinutes();
         const currentTimeInHours = hour + minute / 60;
 
         const SERVICE_START = 9;    // 9:00 AM IST

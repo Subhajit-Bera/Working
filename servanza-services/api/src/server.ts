@@ -1,5 +1,5 @@
-// Set timezone to IST for all Date operations
-process.env.TZ = 'Asia/Kolkata';
+// NOTE: Server runs in UTC. IST business logic (e.g., service hours 9 AM–10 PM)
+// is handled via date-fns-tz in booking.service.ts. Do NOT set process.env.TZ.
 
 import http from 'http';
 import createApp from './app';
