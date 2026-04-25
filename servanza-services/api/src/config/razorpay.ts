@@ -17,14 +17,9 @@ export function initializeRazorpay(): Razorpay | null {
       return null;
     }
 
-    // razorpayInstance = new Razorpay({
-    //   key_id: keyId,
-    //   key_secret: keySecret,
-    // });
-
     razorpayInstance = new Razorpay({
-      key_id: "1",
-      key_secret: "100",
+      key_id: keyId,
+      key_secret: keySecret,
     });
 
     logger.info('Razorpay initialized successfully');
@@ -37,12 +32,8 @@ export function initializeRazorpay(): Razorpay | null {
 }
 
 export function getRazorpay(): Razorpay | null {
-  // if (!razorpayInstance) {
-  //   const rzp = initializeRazorpay();
-  //   if (!rzp) {
-  //     throw new Error('Razorpay not initialized');
-  //   }
-  //   return rzp;
-  // }
+  if (!razorpayInstance) {
+    return initializeRazorpay();
+  }
   return razorpayInstance;
 }

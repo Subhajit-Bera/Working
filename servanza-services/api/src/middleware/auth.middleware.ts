@@ -20,7 +20,7 @@ export const authenticate = async (
     const token = authHeader.substring(7);
 
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string;
       role: UserRole;
       type: string;

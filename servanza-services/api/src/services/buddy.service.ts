@@ -530,30 +530,26 @@ export class BuddyService {
       throw new ApiError(400, 'This job offer has expired or already been processed');
     }
 
-    // Step 2: Use transaction to atomically claim the job
+    // Step 2: Use atomic UPDATE with status guard to claim the job.
+    // This eliminates the TOCTOU race: if two buddies fire simultaneously,
+    // only one will match WHERE status = 'PENDING', the other gets 0 rows.
     try {
       await prisma.$transaction(async (tx) => {
-        // Lock the booking row and check its status
-        const booking = await tx.booking.findUnique({
-          where: { id: assignment.bookingId },
-        });
-
-        if (!booking) {
-          throw new ApiError(404, 'Booking not found');
-        }
-
-        // If booking is no longer PENDING, another buddy already accepted
-        if (booking.status !== BookingStatus.PENDING) {
-          throw new ApiError(409, 'JOB_ALREADY_TAKEN');
-        }
-
-        // Claim the job: Update booking status to ACCEPTED
-        await tx.booking.update({
-          where: { id: assignment.bookingId },
+        // Atomic claim: only succeeds if booking is still PENDING
+        const claimResult = await tx.booking.updateMany({
+          where: {
+            id: assignment.bookingId,
+            status: BookingStatus.PENDING,
+          },
           data: {
             status: BookingStatus.ACCEPTED,
           },
         });
+
+        // If no rows were updated, another buddy already claimed it
+        if (claimResult.count === 0) {
+          throw new ApiError(409, 'JOB_ALREADY_TAKEN');
+        }
 
         // Update this assignment to ACCEPTED
         await tx.assignment.update({
@@ -652,37 +648,37 @@ export class BuddyService {
       assignment.status === AssignmentStatus.ON_WAY ||
       assignment.status === AssignmentStatus.ARRIVED;
 
-    // === WEEKLY REJECTION LIMIT VALIDATION ===
-    // Enforce limit for ALL rejection types to prevent buddy from rejecting too many jobs
-    const MAX_REJECTIONS_PER_WEEK = 2;
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    // Count ALL rejections in the past week (both pre and post acceptance)
-    const rejectionsThisWeek = await prisma.assignment.count({
-      where: {
-        buddyId,
-        status: AssignmentStatus.REJECTED,
-        rejectedAt: { gte: oneWeekAgo },
-      },
-    });
-
-    if (rejectionsThisWeek >= MAX_REJECTIONS_PER_WEEK) {
-      throw new ApiError(
-        400,
-        `You have already rejected ${rejectionsThisWeek} jobs this week. Maximum allowed is ${MAX_REJECTIONS_PER_WEEK} per week.`
-      );
-    }
-
-    logger.info(`Buddy ${buddyId} has ${rejectionsThisWeek}/${MAX_REJECTIONS_PER_WEEK} rejections this week`);
-
-    // ===== ATOMIC TRANSACTION: DB updates + Job Backup =====
+    // === ATOMIC TRANSACTION: Rejection limit check + DB updates + Job Backup ===
+    // The rejection count MUST be inside the transaction to prevent TOCTOU bypasses
+    // under concurrent requests from modified clients.
     const { backupJobInTransaction } = await import('./job-backup.service');
     const { addQueueJobWithBackupId } = await import('../queues/assignment.queue');
 
     let backupId: string | null = null;
 
     await prisma.$transaction(async (tx) => {
+      // === WEEKLY REJECTION LIMIT VALIDATION (inside transaction) ===
+      const MAX_REJECTIONS_PER_WEEK = 2;
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+      const rejectionsThisWeek = await tx.assignment.count({
+        where: {
+          buddyId,
+          status: AssignmentStatus.REJECTED,
+          rejectedAt: { gte: oneWeekAgo },
+        },
+      });
+
+      if (rejectionsThisWeek >= MAX_REJECTIONS_PER_WEEK) {
+        throw new ApiError(
+          400,
+          `You have already rejected ${rejectionsThisWeek} jobs this week. Maximum allowed is ${MAX_REJECTIONS_PER_WEEK} per week.`
+        );
+      }
+
+      logger.info(`Buddy ${buddyId} has ${rejectionsThisWeek}/${MAX_REJECTIONS_PER_WEEK} rejections this week`);
+
       // Update assignment
       await tx.assignment.update({
         where: { id: assignmentId },
@@ -963,10 +959,6 @@ export class BuddyService {
     });
 
     logger.info(`Job started: ${assignmentId} by buddy ${buddyId}`);
-
-    // Trigger background job (if needed)
-    const { addAssignmentJob } = await import('../queues/assignment.queue');
-    await addAssignmentJob(assignment.bookingId, 1, 1000); // High priority, 1s delay
   }
 
 

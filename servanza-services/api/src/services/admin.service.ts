@@ -1331,21 +1331,22 @@ export class AdminService {
     const defaultStartDate = startDate || new Date(now.getFullYear(), now.getMonth() - 3, 1); // Last 3 months
     const defaultEndDate = endDate || now;
 
-    // Daily revenue - Use queryRawUnsafe since DATE_TRUNC requires literal interval
+    // Daily revenue - DATE_TRUNC interval is a SQL literal, can't be parameterized.
+    // Validated against whitelist to prevent injection.
     const validGroupBy = ['day', 'week', 'month'].includes(groupBy) ? groupBy : 'day';
-    const revenueByPeriod = await prisma.$queryRawUnsafe<Array<{ date: Date; revenue: number; count: number }>>(
-      `SELECT 
-        DATE_TRUNC('${validGroupBy}', "createdAt") as date,
+    const groupByLiteral = Prisma.raw(validGroupBy);
+
+    const revenueByPeriod = await prisma.$queryRaw<Array<{ date: Date; revenue: number; count: number }>>(
+      Prisma.sql`SELECT 
+        DATE_TRUNC(${groupByLiteral}, "createdAt") as date,
         SUM("amount") as revenue,
         COUNT(*) as count
       FROM transactions
       WHERE "status" = 'COMPLETED'
-        AND "createdAt" >= $1
-        AND "createdAt" <= $2
-      GROUP BY DATE_TRUNC('${validGroupBy}', "createdAt")
-      ORDER BY date ASC`,
-      defaultStartDate,
-      defaultEndDate
+        AND "createdAt" >= ${defaultStartDate}
+        AND "createdAt" <= ${defaultEndDate}
+      GROUP BY DATE_TRUNC(${groupByLiteral}, "createdAt")
+      ORDER BY date ASC`
     );
 
     // Revenue by payment method
@@ -1413,17 +1414,15 @@ export class AdminService {
     const defaultEndDate = endDate || now;
 
     // Bookings by day
-    const bookingsByDay = await prisma.$queryRawUnsafe<Array<{ date: Date; count: number }>>(
-      `SELECT 
+    const bookingsByDay = await prisma.$queryRaw<Array<{ date: Date; count: number }>>(
+      Prisma.sql`SELECT 
         DATE_TRUNC('day', "createdAt") as date,
         COUNT(*) as count
       FROM bookings
-      WHERE "createdAt" >= $1
-        AND "createdAt" <= $2
+      WHERE "createdAt" >= ${defaultStartDate}
+        AND "createdAt" <= ${defaultEndDate}
       GROUP BY DATE_TRUNC('day', "createdAt")
-      ORDER BY date ASC`,
-      defaultStartDate,
-      defaultEndDate
+      ORDER BY date ASC`
     );
 
     // Bookings by status

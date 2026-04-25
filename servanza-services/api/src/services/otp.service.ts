@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { logger } from '../utils/logger';
 import twilio from 'twilio';
 import { ApiError } from '../utils/errors';
+import { cacheGet, cacheSet } from '../config/redis';
 
 export class OTPService {
   private twilioClient: twilio.Twilio | null = null;
@@ -119,13 +120,12 @@ export class OTPService {
    * Generate random OTP
    */
   private generateOTP(length: number): string {
-    const digits = '0123456789';
+    // Use crypto.randomInt for cryptographically secure OTP generation
     let otp = '';
     for (let i = 0; i < length; i++) {
-      otp += digits[Math.floor(Math.random() * 10)];
+      otp += crypto.randomInt(0, 10).toString();
     }
-    return '123456'; // For testing, override later
-    // return otp;
+    return otp;
   }
 
   /**
@@ -139,16 +139,34 @@ export class OTPService {
    * Resend OTP
    */
   async resendOTP(bookingId: string, phone: string): Promise<void> {
+    // ── Rate limiting: max 3 OTP requests per phone per 15 minutes ──
+    const rateLimitKey = `otp_rate:${phone}`;
+    const currentCount = await cacheGet<number>(rateLimitKey);
+    const MAX_OTP_REQUESTS = 3;
+    const RATE_LIMIT_WINDOW_SECONDS = 15 * 60; // 15 minutes
+
+    if (currentCount != null && currentCount >= MAX_OTP_REQUESTS) {
+      throw new ApiError(429, 'Too many OTP requests. Please try again in 15 minutes.');
+    }
+
     const existingOTP = await prisma.otpVerification.findUnique({
       where: { bookingId },
     });
 
     if (existingOTP) {
-       if (existingOTP.isUsed) {
+      if (existingOTP.isUsed) {
         throw new ApiError(400, 'OTP already used');
       }
-      // Check for rate limiting (e.g., allow resend only after 1 min)
+
+      // Enforce 60-second cooldown between resends
+      const secondsSinceCreated = (Date.now() - existingOTP.createdAt.getTime()) / 1000;
+      if (secondsSinceCreated < 60) {
+        throw new ApiError(429, `Please wait ${Math.ceil(60 - secondsSinceCreated)} seconds before requesting a new OTP.`);
+      }
     }
+
+    // Increment rate limit counter
+    await cacheSet(rateLimitKey, (currentCount || 0) + 1, RATE_LIMIT_WINDOW_SECONDS);
 
     // Generate and send a new OTP
     await this.generateOTPForBooking(bookingId, phone);

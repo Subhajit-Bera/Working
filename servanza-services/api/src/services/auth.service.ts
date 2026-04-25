@@ -34,7 +34,12 @@ interface AuthResponse {
 }
 
 export class AuthService {
-  private readonly JWT_SECRET: Secret = (process.env.JWT_SECRET as Secret) || ('your-secret-key' as Secret);
+  private readonly JWT_SECRET: Secret = (() => {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('FATAL: JWT_SECRET environment variable is not set. Refusing to start with insecure defaults.');
+    }
+    return process.env.JWT_SECRET as Secret;
+  })();
   private readonly REFRESH_TOKEN_EXPIRES_IN = '30d';
 
   /**
