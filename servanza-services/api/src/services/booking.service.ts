@@ -98,7 +98,8 @@ export class BookingService {
       const { addQueueJobWithBackupId } = await import('../queues/assignment.queue');
 
       let backupId: string | null = null;
-      const priority = data.isImmediate ? 1 : 5;
+      const isImmediateBooking = data.isImmediate || service.isInstant || false;
+      const priority = isImmediateBooking ? 1 : 5;
 
       const booking = await withDbRetry(() => prisma.$transaction(async (tx) => {
         // Step 1: Create booking
@@ -109,7 +110,7 @@ export class BookingService {
             addressId: data.addressId,
             scheduledStart,
             scheduledEnd,
-            isImmediate: data.isImmediate || false,
+            isImmediate: isImmediateBooking,
             paymentMethod: data.paymentMethod,
             paymentStatus:
               data.paymentMethod === PaymentMethod.PREPAID
@@ -119,6 +120,8 @@ export class BookingService {
             taxAmount,
             discountAmount: 0,
             totalAmount,
+            employeePayout: service.employeePayout,
+            ourPayout: service.ourPayout,
             specialInstructions: data.specialInstructions,
             status: initialStatus,
             retryCount: 0,
@@ -574,7 +577,7 @@ export class BookingService {
 
     await this.buddyService.updateBuddyStatsOnCompletion(
       assignment.buddyId,
-      booking.totalAmount
+      booking.employeePayout
     );
 
     // eventBus.emit('notify:user:completed', { args: [booking.userId, booking] });

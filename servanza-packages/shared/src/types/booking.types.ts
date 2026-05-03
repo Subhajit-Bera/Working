@@ -40,6 +40,9 @@ export interface Service {
   description?: string;
   durationMins: number;
   basePrice: number;
+  employeePayout: number;
+  ourPayout: number;
+  isInstant: boolean;
   currency: string;
   imageUrl?: string;
   isActive: boolean;
@@ -75,6 +78,8 @@ export interface Booking {
   taxAmount: number;
   discountAmount: number;
   totalAmount: number;
+  employeePayout: number;
+  ourPayout: number;
   currency: string;
   specialInstructions?: string;
   completedAt?: Date;

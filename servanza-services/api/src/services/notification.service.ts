@@ -161,7 +161,7 @@ export class NotificationService {
         address: booking.address.formattedAddress,
         assignmentId: assignmentDetails?.assignmentId,
         distance: assignmentDetails?.distance,
-        price: booking.totalAmount,
+        price: booking.employeePayout,
       },
       booking.id,
       booking.service.imageUrl
@@ -179,7 +179,7 @@ export class NotificationService {
         serviceTitle: booking.service.title,
         address: booking.address.formattedAddress,
         distance: String(assignmentDetails?.distance ?? 0),
-        price: String(booking.totalAmount || 0),
+        price: String(booking.employeePayout || 0),
         isImmediate: String(booking.isImmediate || false),
       },
       clickAction: `/jobs/${booking.id}`,

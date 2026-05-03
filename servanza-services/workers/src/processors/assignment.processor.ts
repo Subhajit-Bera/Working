@@ -96,7 +96,7 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
         serviceTitle: booking.service.title,
         address: booking.address.formattedAddress,
         distance: assignment.distance.toFixed(1),
-        price: booking.totalAmount,
+        price: booking.employeePayout,
         isImmediate: booking.isImmediate,
         scheduledStart: booking.scheduledStart.toISOString(),
       };
