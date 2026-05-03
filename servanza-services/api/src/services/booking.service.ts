@@ -121,7 +121,7 @@ export class BookingService {
             discountAmount: 0,
             totalAmount,
             employeePayout: service.employeePayout,
-            ourPayout: service.ourPayout,
+            cmpPayout: service.cmpPayout,
             specialInstructions: data.specialInstructions,
             status: initialStatus,
             retryCount: 0,

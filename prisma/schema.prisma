@@ -187,7 +187,7 @@ model Booking {
   discountAmount  Float          @default(0)
   totalAmount     Float
   employeePayout  Float          @default(0)
-  ourPayout       Float          @default(0)
+  cmpPayout       Float          @default(0)
   currency        String         @default("INR")
   specialInstructions String?
   metadata        Json?
@@ -444,8 +444,8 @@ model Service {
   durationMins  Int       // Estimated duration in minutes
   basePrice     Float
   employeePayout Float    @default(0)
-  ourPayout     Float     @default(0)
-  isInstant     Boolean   @default(false)
+  cmpPayout      Float    @default(0)
+  isInstant      Boolean  @default(false)
   currency      String    @default("INR")
   imageUrl      String?
   imageUrls     String[]  @default([])

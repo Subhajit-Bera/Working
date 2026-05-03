@@ -41,7 +41,7 @@ export interface Service {
   durationMins: number;
   basePrice: number;
   employeePayout: number;
-  ourPayout: number;
+  cmpPayout: number;
   isInstant: boolean;
   currency: string;
   imageUrl?: string;
@@ -79,7 +79,7 @@ export interface Booking {
   discountAmount: number;
   totalAmount: number;
   employeePayout: number;
-  ourPayout: number;
+  cmpPayout: number;
   currency: string;
   specialInstructions?: string;
   completedAt?: Date;
