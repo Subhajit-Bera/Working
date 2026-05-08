@@ -11,6 +11,10 @@ import routes from './routes';
 const createApp = (): Express => {
   const app = express();
 
+  // Trust the first proxy in front of the app (e.g. Load Balancer, Nginx)
+  // This is required to get the correct req.ip from X-Forwarded-For header
+  app.set('trust proxy', 1);
+
   // Security middleware — strict config for a headless JSON API
   app.use(
     helmet({
