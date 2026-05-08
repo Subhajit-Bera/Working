@@ -210,8 +210,10 @@ async function sendPushNotificationToUser(
        // Infer from payload context
        if (payload.data?.type && (payload.data.type.includes('job') || payload.data.type === 'review_received')) {
            targetTokens = user.buddyDeviceTokens;
+           targetApp = 'BUDDY_APP';
        } else {
            targetTokens = user.customerDeviceTokens;
+           targetApp = 'CUSTOMER_APP';
        }
     } else {
         targetTokens = targetApp === 'CUSTOMER_APP' ? user.customerDeviceTokens : user.buddyDeviceTokens;
