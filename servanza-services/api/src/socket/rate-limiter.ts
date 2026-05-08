@@ -7,4 +7,4 @@
  */
 
 export { checkDistributedRateLimit as checkRateLimit } from './distributed-rate-limiter';
-export { checkDistributedRateLimit, getRateLimitRemaining } from './distributed-rate-limiter';
+export { checkDistributedRateLimit } from './distributed-rate-limiter';

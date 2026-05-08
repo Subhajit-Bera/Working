@@ -1,82 +1,71 @@
 import { logger } from '../utils/logger';
 import { redis } from '../config/redis';
+import '../utils/rateLimit.lua'; // Ensure the Lua script is loaded
 
-/**
- * Hybrid Rate Limiter - Redis primary with in-memory fallback
- * 
- * Uses Redis for distributed rate limiting across multiple API instances.
- * Falls back to in-memory limiting if Redis is unavailable.
- * 
- * Implements sliding window algorithm with Redis sorted sets.
- */
-
-const RATE_LIMIT_PREFIX = 'ratelimit:socket:';
+const RATE_LIMIT_PREFIX = 'rl:socket:';
 
 interface RateLimitConfig {
-    maxRequests: number;
-    windowSizeSeconds: number;
+    capacity: number;
+    windowMs: number;
 }
 
-// Pre-configured limits for different event types
+// Converted from maxRequests/windowSizeSeconds to Token Bucket capacity/windows
 const EVENT_LIMITS: Record<string, RateLimitConfig> = {
-    'job:accept': { maxRequests: 10, windowSizeSeconds: 60 },
-    'job:reject': { maxRequests: 10, windowSizeSeconds: 60 },
-    'job:start': { maxRequests: 10, windowSizeSeconds: 60 },
-    'job:complete': { maxRequests: 5, windowSizeSeconds: 60 },
-    'location:update': { maxRequests: 20, windowSizeSeconds: 60 },
-    'default': { maxRequests: 100, windowSizeSeconds: 60 },
+    'job:accept': { capacity: 10, windowMs: 60 * 1000 },
+    'job:reject': { capacity: 10, windowMs: 60 * 1000 },
+    'job:start': { capacity: 10, windowMs: 60 * 1000 },
+    'job:complete': { capacity: 5, windowMs: 60 * 1000 },
+    'location:update': { capacity: 20, windowMs: 60 * 1000 },
+    'default': { capacity: 100, windowMs: 60 * 1000 },
 };
 
 // ============ IN-MEMORY FALLBACK ============
-interface MemoryRateLimitEntry {
-    count: number;
-    windowStart: number;
+interface MemoryBucket {
+    microTokens: number;
+    lastUpdate: number;
 }
-
-const memoryFallback = new Map<string, MemoryRateLimitEntry>();
+const memoryFallback = new Map<string, MemoryBucket>();
 let redisAvailable = true;
 let lastRedisCheck = 0;
-const REDIS_CHECK_INTERVAL = 10000; // Check Redis health every 10 seconds
+const REDIS_CHECK_INTERVAL = 10000; 
 
-// Cleanup old memory entries periodically
+// Cleanup interval to prevent memory leaks
 setInterval(() => {
     const now = Date.now();
-    for (const [key, entry] of memoryFallback.entries()) {
-        if (now - entry.windowStart > 120000) { // 2 minutes
+    for (const [key, bucket] of memoryFallback.entries()) {
+        if (now - bucket.lastUpdate > 120000) { 
             memoryFallback.delete(key);
         }
     }
-}, 60000);
+}, 60000).unref();
 
-/**
- * In-memory rate limit check (fallback when Redis unavailable)
- */
-function checkMemoryRateLimit(key: string, config: RateLimitConfig): boolean {
-    const now = Date.now();
-    const entry = memoryFallback.get(key);
+function checkMemoryRateLimit(key: string, capacity: number, windowMs: number, now: number): boolean {
+    const maxMicroTokens = capacity * 1000;
+    const costMicroTokens = 1000; // Cost is 1 token
 
-    if (!entry || now - entry.windowStart >= config.windowSizeSeconds * 1000) {
-        // New window
-        memoryFallback.set(key, { count: 1, windowStart: now });
+    let bucket = memoryFallback.get(key);
+    if (!bucket) {
+        bucket = { microTokens: maxMicroTokens, lastUpdate: now };
+    }
+
+    const timeDiff = Math.max(0, now - bucket.lastUpdate);
+    const addedMicroTokens = Math.floor((timeDiff * capacity * 1000) / windowMs);
+    
+    bucket.microTokens = Math.min(maxMicroTokens, bucket.microTokens + addedMicroTokens);
+
+    if (bucket.microTokens >= costMicroTokens) {
+        bucket.microTokens -= costMicroTokens;
+        bucket.lastUpdate = now;
+        memoryFallback.set(key, bucket);
         return true;
     }
-
-    if (entry.count >= config.maxRequests) {
-        return false; // Rate limited
-    }
-
-    entry.count++;
-    return true;
+    
+    return false;
 }
 
-/**
- * Check if Redis is available (with caching to avoid hammering)
- */
 async function isRedisAvailable(): Promise<boolean> {
     const now = Date.now();
-    if (now - lastRedisCheck < REDIS_CHECK_INTERVAL) {
-        return redisAvailable;
-    }
+    if (now - lastRedisCheck < REDIS_CHECK_INTERVAL) return redisAvailable;
 
     try {
         await redis.ping();
@@ -90,106 +79,65 @@ async function isRedisAvailable(): Promise<boolean> {
 }
 
 /**
- * Check if a request is allowed using Redis-based distributed rate limiting
- * Falls back to in-memory if Redis is unavailable.
- * 
- * @returns true if allowed, false if rate limited
+ * Executes the Atomic Multi-Key Token Bucket Lua script
  */
 export async function checkDistributedRateLimit(
+    ipAddress: string, // <-- Added IP parameter
     userId: string,
     eventName: string,
     socket: any
 ): Promise<boolean> {
     const config = EVENT_LIMITS[eventName] || EVENT_LIMITS['default'];
-    const key = `${RATE_LIMIT_PREFIX}${userId}:${eventName}`;
+    
+    const ipKey = `${RATE_LIMIT_PREFIX}ip:${ipAddress}`;
+    const userKey = `${RATE_LIMIT_PREFIX}user:${userId}:${eventName}`;
     const now = Date.now();
-    const windowStart = now - (config.windowSizeSeconds * 1000);
 
-    // Check Redis availability
     const useRedis = await isRedisAvailable();
 
     if (!useRedis) {
-        // Use in-memory fallback
-        const allowed = checkMemoryRateLimit(key, config);
+        // Fallback checks user key only to simplify in-memory state during outage
+        const allowed = checkMemoryRateLimit(userKey, config.capacity, config.windowMs, now);
         if (!allowed) {
-            logger.warn(`[RateLimit:Memory] User ${userId} rate limited for ${eventName}`);
             socket.emit('error', {
                 code: 'RATE_LIMITED',
                 message: 'Too many requests. Please slow down.',
-                retryAfter: config.windowSizeSeconds,
+                retryAfter: Math.ceil(config.windowMs / 1000 / config.capacity),
             });
         }
         return allowed;
     }
 
     try {
-        // Use Redis pipeline for atomic operations
-        const pipeline = redis.pipeline();
+        // Using the same Lua script defined in your config!
+        // We give the IP slightly higher burst capacity to handle NAT routing
+        const result = await redis.rateLimitBucket(
+            ipKey,
+            userKey,
+            1, // cost
+            config.capacity * 2, // IP Capacity (generous for NAT)
+            config.windowMs,     // IP Window
+            config.capacity,     // User Capacity (strict)
+            config.windowMs,     // User Window
+            now
+        );
 
-        // Remove old entries outside the window
-        pipeline.zremrangebyscore(key, 0, windowStart);
+        const allowed = result[0] === 1;
 
-        // Count current entries
-        pipeline.zcard(key);
-
-        const results = await pipeline.exec();
-
-        if (!results) {
-            return true; // Redis error - fail open
-        }
-
-        const currentCount = results[1]?.[1] as number || 0;
-
-        if (currentCount >= config.maxRequests) {
-            logger.warn(`[RateLimit:Redis] User ${userId} rate limited for ${eventName} (${currentCount}/${config.maxRequests})`);
+        if (!allowed) {
+            logger.warn(`[RateLimit:Redis] Blocked user ${userId} at IP ${ipAddress} for ${eventName}`);
             socket.emit('error', {
                 code: 'RATE_LIMITED',
                 message: 'Too many requests. Please slow down.',
-                retryAfter: config.windowSizeSeconds,
+                retryAfter: Math.ceil(config.windowMs / 1000 / config.capacity),
             });
             return false;
         }
 
-        // Add new entry with current timestamp as score
-        const addPipeline = redis.pipeline();
-        addPipeline.zadd(key, now, `${now}`);
-        addPipeline.expire(key, config.windowSizeSeconds + 1);
-        await addPipeline.exec();
-
         return true;
     } catch (error) {
-        // Redis error - mark as unavailable and use memory fallback
         redisAvailable = false;
-        logger.error('[RateLimit] Redis error, switching to memory fallback:', error);
-
-        const allowed = checkMemoryRateLimit(key, config);
-        if (!allowed) {
-            socket.emit('error', {
-                code: 'RATE_LIMITED',
-                message: 'Too many requests. Please slow down.',
-                retryAfter: config.windowSizeSeconds,
-            });
-        }
-        return allowed;
-    }
-}
-
-/**
- * Get remaining requests for a user/event combination
- */
-export async function getRateLimitRemaining(
-    userId: string,
-    eventName: string
-): Promise<number> {
-    const config = EVENT_LIMITS[eventName] || EVENT_LIMITS['default'];
-    const key = `${RATE_LIMIT_PREFIX}${userId}:${eventName}`;
-    const windowStart = Date.now() - (config.windowSizeSeconds * 1000);
-
-    try {
-        await redis.zremrangebyscore(key, 0, windowStart);
-        const count = await redis.zcard(key);
-        return Math.max(0, config.maxRequests - count);
-    } catch {
-        return -1;
+        logger.error('[RateLimit] Redis Lua error, switching to memory fallback:', error);
+        return checkMemoryRateLimit(userKey, config.capacity, config.windowMs, now);
     }
 }

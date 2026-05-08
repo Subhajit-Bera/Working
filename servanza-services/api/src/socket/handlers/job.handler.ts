@@ -14,7 +14,7 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
 
     // Distributed rate limiting (works across multiple API instances)
     const { checkDistributedRateLimit } = await import('../distributed-rate-limiter');
-    if (!(await checkDistributedRateLimit(buddyUserId, 'job:accept', socket))) {
+    if (!(await checkDistributedRateLimit(socket.handshake.address, buddyUserId, 'job:accept', socket))) {
       return; // Rate limited - error already emitted
     }
 
@@ -145,7 +145,7 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
   socket.on('job:reject', async (data: { assignmentId: string; reason?: string }) => {
     // Distributed rate limiting
     const { checkDistributedRateLimit } = await import('../distributed-rate-limiter');
-    if (!(await checkDistributedRateLimit(socket.data.userId, 'job:reject', socket))) {
+    if (!(await checkDistributedRateLimit(socket.handshake.address, socket.data.userId, 'job:reject', socket))) {
       return;
     }
 
