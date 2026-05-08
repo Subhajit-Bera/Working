@@ -451,7 +451,7 @@ export class StorageService {
    * Generic method for uploading service images and category icons
    */
   async uploadServiceAsset(
-    assetType: 'service' | 'category',
+    assetType: 'service' | 'category' | 'promotion',
     entityId: string,
     file: Express.Multer.File
   ): Promise<string> {
@@ -461,7 +461,8 @@ export class StorageService {
 
       // Generate unique filename
       const fileExtension = file.originalname.split('.').pop();
-      const folder = assetType === 'service' ? 'services' : 'categories';
+      const folderMap: Record<string, string> = { service: 'services', category: 'categories', promotion: 'promotions' };
+      const folder = folderMap[assetType] || assetType;
       const uniqueFileName = `${folder}/${entityId}/${crypto.randomBytes(8).toString('hex')}.${fileExtension}`;
 
       // Upload to R2

@@ -116,6 +116,7 @@ model Address {
   updatedAt        DateTime @updatedAt
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   bookings         Booking[]
+  orders           Order[]
   @@index([userId])
   @@index([location], type: Gist) // Gist index for PostGIS
   @@map("addresses")
@@ -190,6 +191,8 @@ model Booking {
   cmpPayout       Float          @default(0)
   currency        String         @default("INR")
   specialInstructions String?
+  contactPhone    String?        // Contact phone for this booking
+  couponCode      String?        // Coupon code applied to this booking
   metadata        Json?
   completedAt     DateTime?
   cancelledAt     DateTime?
@@ -216,12 +219,44 @@ model Booking {
   auditLogs       AuditLog[]
   chatMessages    ChatMessage[]
   callLogs        CallLog[]
+  orderId         String?
+  order           Order?         @relation(fields: [orderId], references: [id])
   @@index([userId])
   @@index([serviceId])
   @@index([status])
   @@index([scheduledStart])
   @@index([createdAt])
+  @@index([orderId])
   @@map("bookings")
+}
+
+model Order {
+  id                  String        @id @default(cuid())
+  orderNumber         String        @unique
+  userId              String
+  addressId           String
+  scheduledStart      DateTime
+  scheduledEnd        DateTime
+  isImmediate         Boolean       @default(false)
+  subtotal            Float
+  taxAmount           Float         @default(0)
+  discountAmount      Float         @default(0)
+  totalAmount         Float
+  couponCode          String?
+  contactPhone        String?
+  specialInstructions String?
+  paymentMethod       PaymentMethod @default(PREPAID)
+  paymentStatus       PaymentStatus @default(PENDING)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address             Address       @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  bookings            Booking[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("orders")
 }
 
 
@@ -526,6 +561,7 @@ model User {
   chatMessages  ChatMessage[]  @relation("ChatMessages")
   callerCalls   CallLog[]      @relation("CallerCalls")
   receiverCalls CallLog[]      @relation("ReceiverCalls")
+  orders        Order[]
   @@index([email])
   @@index([phone])
   @@index([firebaseUid])

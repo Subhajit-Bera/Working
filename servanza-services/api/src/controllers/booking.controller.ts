@@ -11,7 +11,7 @@ const otpService = new OTPService();
 export class BookingController {
   async validateCart(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { items, total } = req.body;
+      const { items, total, couponCode } = req.body;
       
       if (!items || !Array.isArray(items) || items.length === 0) {
         throw new ApiError(400, 'Cart is empty or invalid format');
@@ -33,20 +33,59 @@ export class BookingController {
         if (!dbService.isActive) {
           throw new ApiError(400, `Service ${dbService.title} is currently unavailable`);
         }
-        // Multiply by quantity if applicable (assuming item.quantity exists)
         calculatedSubtotal += dbService.basePrice * (item.quantity || 1);
       }
 
-      // Re-calculate tax and total
-      const taxAmount = calculatedSubtotal * 0.18;
-      const calculatedTotal = calculatedSubtotal + taxAmount;
+      // Apply coupon discount if provided
+      let discountAmount = 0;
+      if (couponCode) {
+        const coupon = await prisma.coupon.findUnique({
+          where: { code: couponCode.toUpperCase() },
+        });
 
-      // Allow small floating point variations (e.g., within 1 unit of currency)
-      if (Math.abs(calculatedTotal - total) > 1) {
+        if (coupon && coupon.isActive && new Date() <= coupon.expiresAt) {
+          if (coupon.discountType === 'PERCENTAGE') {
+            discountAmount = Math.round(calculatedSubtotal * (coupon.discountValue / 100));
+            // Cap at maxDiscount if set
+            if (coupon.maxDiscount) {
+              discountAmount = Math.min(discountAmount, coupon.maxDiscount);
+            }
+          } else {
+            discountAmount = coupon.discountValue;
+          }
+          discountAmount = Math.min(discountAmount, calculatedSubtotal);
+        }
+      }
+
+      const discountedSubtotal = calculatedSubtotal - discountAmount;
+      // Use Math.round to match client-side rounding
+      const taxAmount = Math.round(discountedSubtotal * 0.18);
+      const calculatedTotal = discountedSubtotal + taxAmount;
+
+      // Allow small floating point variations (within 2 units of currency)
+      if (Math.abs(calculatedTotal - total) > 2) {
+        // Log detailed mismatch for debugging
+        const itemDetails = items.map((item: any) => {
+          const dbService = services.find(s => s.id === item.serviceId);
+          return {
+            serviceId: item.serviceId,
+            title: dbService?.title,
+            dbBasePrice: dbService?.basePrice,
+            clientQuantity: item.quantity,
+            lineTotal: (dbService?.basePrice || 0) * (item.quantity || 1),
+          };
+        });
+        console.error('Cart validation mismatch details:', JSON.stringify({
+          clientTotal: total,
+          serverCalculated: { subtotal: calculatedSubtotal, discount: discountAmount, tax: taxAmount, total: calculatedTotal },
+          couponCode: couponCode || 'none',
+          items: itemDetails,
+        }, null, 2));
+
         throw new ApiError(400, 'Cart totals mismatch. Prices may have been updated.');
       }
 
-      res.json({ success: true, message: 'Cart validated successfully', data: { calculatedTotal } });
+      res.json({ success: true, message: 'Cart validated successfully', data: { calculatedTotal, discountAmount } });
     } catch (error) {
       next(error);
     }

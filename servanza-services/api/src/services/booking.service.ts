@@ -19,6 +19,14 @@ interface CreateBookingData {
   isImmediate?: boolean;
   paymentMethod: PaymentMethod;
   specialInstructions?: string;
+  orderId?: string;
+  contactPhone?: string;
+  couponCode?: string;
+  overridePrice?: number;
+  overrideTaxAmount?: number;
+  overrideTotalAmount?: number;
+  overrideEmployeePayout?: number;
+  overrideCmpPayout?: number;
 }
 
 interface BookingFilters {
@@ -61,9 +69,11 @@ export class BookingService {
       const scheduledStart = new Date(data.scheduledStart);
       const scheduledEnd = new Date(scheduledStart.getTime() + service.durationMins * 60000);
 
-      const price = service.basePrice;
-      const taxAmount = price * 0.18;
-      const totalAmount = price + taxAmount;
+      const price = data.overridePrice ?? service.basePrice;
+      const taxAmount = data.overrideTaxAmount ?? (price * 0.18);
+      const totalAmount = data.overrideTotalAmount ?? (price + taxAmount);
+      const employeePayout = data.overrideEmployeePayout ?? service.employeePayout;
+      const cmpPayout = data.overrideCmpPayout ?? service.cmpPayout;
 
       // Check if booking is within service hours (9 AM - 10 PM IST)
       // Uses explicit IST conversion — does NOT rely on process.env.TZ
@@ -120,10 +130,13 @@ export class BookingService {
             taxAmount,
             discountAmount: 0,
             totalAmount,
-            employeePayout: service.employeePayout,
-            cmpPayout: service.cmpPayout,
+            employeePayout,
+            cmpPayout,
             specialInstructions: data.specialInstructions,
             status: initialStatus,
+            orderId: data.orderId,
+            contactPhone: data.contactPhone,
+            couponCode: data.couponCode,
             retryCount: 0,
             lastRetryAt: null,
             escalatedAt: null,
