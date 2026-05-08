@@ -1,12 +1,7 @@
 import { Socket, Server } from 'socket.io';
 // import { GeoService } from '../../services/geospatial.service';
 import { logger } from '../../utils/logger';
-import { rateLimit } from '../../utils/rateLimit';
-
-// const geoService = new GeoService();
-
-// Rate limit: 1 update per 5 seconds per buddy
-const locationRateLimiter = rateLimit(1, 5000);
+import { checkDistributedRateLimit } from '../distributed-rate-limiter';
 
 export const handleLocationEvents = (socket: Socket, io: Server): void => {
   // Buddy updates location
@@ -20,9 +15,9 @@ export const handleLocationEvents = (socket: Socket, io: Server): void => {
         return;
       }
 
-      // Apply rate limiting
-      if (!locationRateLimiter(userId)) {
-        logger.warn(`Rate limit exceeded for buddy ${userId}`);
+      // Apply distributed rate limiting
+      const ipAddress = socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address;
+      if (!(await checkDistributedRateLimit(ipAddress, userId, 'location:update', socket))) {
         return;
       }
 
@@ -94,8 +89,10 @@ export const handleLocationEvents = (socket: Socket, io: Server): void => {
       }
 
       // Rate limit check (allow more frequent updates for active tracking)
-      // We use the existing rate limiter but with a different key
-
+      const ipAddress = socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address;
+      if (!(await checkDistributedRateLimit(ipAddress, buddyId, 'buddy:location', socket))) {
+        return;
+      }
       // Broadcast location to the user who booked this service
       // User joins room `user:{userId}` when they connect
       io.to(`user:${data.userId}`).emit('buddy:location:live', {

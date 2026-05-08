@@ -16,6 +16,7 @@ const EVENT_LIMITS: Record<string, RateLimitConfig> = {
     'job:start': { capacity: 10, windowMs: 60 * 1000 },
     'job:complete': { capacity: 5, windowMs: 60 * 1000 },
     'location:update': { capacity: 20, windowMs: 60 * 1000 },
+    'buddy:location': { capacity: 60, windowMs: 60 * 1000 },
     'default': { capacity: 100, windowMs: 60 * 1000 },
 };
 

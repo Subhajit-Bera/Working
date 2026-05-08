@@ -4,6 +4,7 @@ import { AssignmentStatus, BookingStatus } from '@prisma/client';
 import { logger } from '../../utils/logger';
 import { BookingService } from '../../services/booking.service';
 // import { ApiError } from '../../utils/errors';
+import { checkDistributedRateLimit } from '../distributed-rate-limiter';
 
 const bookingService = new BookingService();
 
@@ -13,8 +14,8 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
     const buddyUserId = socket.data.userId; // This is User.id from Auth
 
     // Distributed rate limiting (works across multiple API instances)
-    const { checkDistributedRateLimit } = await import('../distributed-rate-limiter');
-    if (!(await checkDistributedRateLimit(socket.handshake.address, buddyUserId, 'job:accept', socket))) {
+    const ipAddress = socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address;
+    if (!(await checkDistributedRateLimit(ipAddress, buddyUserId, 'job:accept', socket))) {
       return; // Rate limited - error already emitted
     }
 
@@ -144,8 +145,8 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
   // --- Buddy Rejects Job ---
   socket.on('job:reject', async (data: { assignmentId: string; reason?: string }) => {
     // Distributed rate limiting
-    const { checkDistributedRateLimit } = await import('../distributed-rate-limiter');
-    if (!(await checkDistributedRateLimit(socket.handshake.address, socket.data.userId, 'job:reject', socket))) {
+    const ipAddress = socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address;
+    if (!(await checkDistributedRateLimit(ipAddress, socket.data.userId, 'job:reject', socket))) {
       return;
     }
 
