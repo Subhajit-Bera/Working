@@ -76,6 +76,7 @@ router.post('/unlink-firebase', authenticate, authController.unlinkFirebaseAccou
 const fcmTokenSchema = z.object({
   body: z.object({
     token: z.string().min(1, 'FCM token is required'),
+    appSource: z.enum(['CUSTOMER_APP', 'BUDDY_APP']).optional(),
   }),
 });
 

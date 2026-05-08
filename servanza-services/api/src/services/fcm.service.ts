@@ -22,18 +22,26 @@ export class FCMService {
   /**
    * Register a new FCM device token for a user
    */
-  async registerDeviceToken(userId: string, token: string): Promise<void> {
+  async registerDeviceToken(userId: string, token: string, appSource?: string, role?: string): Promise<void> {
     try {
       // Validate token with Firebase
-      const isValid = await this.validateToken(token);
+      const isValid = await this.validateToken(token, appSource, role);
       if (!isValid) {
         throw new Error('Invalid FCM token');
+      }
+
+      let targetColumn = 'customerDeviceTokens';
+      if (appSource) {
+        targetColumn = appSource === 'BUDDY_APP' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      } else {
+        logger.warn(`Legacy token registration used for user ${userId}. Missing appSource.`);
+        targetColumn = role === 'BUDDY' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
       }
 
       // Get current user tokens
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { deviceTokens: true },
+        select: { [targetColumn]: true },
       });
 
       if (!user) {
@@ -41,17 +49,17 @@ export class FCMService {
       }
 
       // Add token if not already present
-      const tokens = user.deviceTokens || [];
+      const tokens = (user as any)[targetColumn] || [];
       if (!tokens.includes(token)) {
         await prisma.user.update({
           where: { id: userId },
           data: {
-            deviceTokens: {
+            [targetColumn]: {
               push: token,
             },
           },
         });
-        logger.info(`FCM token registered for user ${userId}`);
+        logger.info(`FCM token registered for user ${userId} in ${targetColumn}`);
       }
     } catch (error) {
       logger.error(`Failed to register FCM token for user ${userId}:`, error);
@@ -62,30 +70,38 @@ export class FCMService {
   /**
    * Remove a device token from a user
    */
-  async removeDeviceToken(userId: string, token: string): Promise<void> {
+  async removeDeviceToken(userId: string, token: string, appSource?: string, role?: string): Promise<void> {
     try {
+      let targetColumn = 'customerDeviceTokens';
+      if (appSource) {
+        targetColumn = appSource === 'BUDDY_APP' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      } else {
+        logger.warn(`Legacy token removal used for user ${userId}. Missing appSource.`);
+        targetColumn = role === 'BUDDY' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      }
+
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { deviceTokens: true },
+        select: { [targetColumn]: true },
       });
 
       if (!user) {
         throw new Error('User not found');
       }
 
-      const tokens = user.deviceTokens || [];
-      const updatedTokens = tokens.filter((t) => t !== token);
+      const tokens = (user as any)[targetColumn] || [];
+      const updatedTokens = tokens.filter((t: string) => t !== token);
 
       await prisma.user.update({
         where: { id: userId },
         data: {
-          deviceTokens: {
+          [targetColumn]: {
             set: updatedTokens,
           },
         },
       });
 
-      logger.info(`FCM token removed for user ${userId}`);
+      logger.info(`FCM token removed for user ${userId} from ${targetColumn}`);
     } catch (error) {
       logger.error(`Failed to remove FCM token for user ${userId}:`, error);
       throw error;
@@ -95,19 +111,26 @@ export class FCMService {
   /**
    * Send a push notification to a single user
    */
-  async sendToUser(userId: string, payload: FCMNotificationPayload): Promise<void> {
+  async sendToUser(userId: string, payload: FCMNotificationPayload, targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'): Promise<void> {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { deviceTokens: true },
+        select: { customerDeviceTokens: true, buddyDeviceTokens: true },
       });
 
-      if (!user || !user.deviceTokens || user.deviceTokens.length === 0) {
-        logger.warn(`No device tokens found for user ${userId}`);
+      let tokens: string[] = [];
+      if (targetApp === 'BUDDY_APP') {
+        tokens = user?.buddyDeviceTokens || [];
+      } else {
+        tokens = user?.customerDeviceTokens || [];
+      }
+
+      if (tokens.length === 0) {
+        logger.warn(`No device tokens found for user ${userId} in ${targetApp || 'CUSTOMER_APP'}`);
         return;
       }
 
-      await this.sendToTokens(user.deviceTokens, payload);
+      await this.sendToTokens(tokens, payload, targetApp);
     } catch (error) {
       logger.error(`Failed to send notification to user ${userId}:`, error);
       throw error;
@@ -117,19 +140,20 @@ export class FCMService {
   /**
    * Send push notifications to multiple users (batch)
    */
-  async sendBatchNotification(batch: FCMBatchNotification): Promise<void> {
+  async sendBatchNotification(batch: FCMBatchNotification, targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'): Promise<void> {
     try {
       const users = await prisma.user.findMany({
         where: {
           id: { in: batch.userIds },
         },
-        select: { id: true, deviceTokens: true },
+        select: { id: true, customerDeviceTokens: true, buddyDeviceTokens: true },
       });
 
       const allTokens: string[] = [];
       users.forEach((user) => {
-        if (user.deviceTokens && user.deviceTokens.length > 0) {
-          allTokens.push(...user.deviceTokens);
+        const tokens = targetApp === 'BUDDY_APP' ? user.buddyDeviceTokens : user.customerDeviceTokens;
+        if (tokens && tokens.length > 0) {
+          allTokens.push(...tokens);
         }
       });
 
@@ -138,8 +162,8 @@ export class FCMService {
         return;
       }
 
-      await this.sendToTokens(allTokens, batch.notification);
-      logger.info(`Batch notification sent to ${allTokens.length} devices`);
+      await this.sendToTokens(allTokens, batch.notification, targetApp);
+      logger.info(`Batch notification sent to ${allTokens.length} devices via ${targetApp || 'CUSTOMER_APP'}`);
     } catch (error) {
       logger.error('Failed to send batch notification:', error);
       throw error;
@@ -149,9 +173,10 @@ export class FCMService {
   /**
    * Send notification to specific tokens
    */
-  async sendToTokens(tokens: string[], payload: FCMNotificationPayload): Promise<void> {
+  async sendToTokens(tokens: string[], payload: FCMNotificationPayload, targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'): Promise<void> {
     try {
-      const messaging = getFirebaseMessaging();
+      const isCustomer = targetApp === 'CUSTOMER_APP' || !targetApp;
+      const messaging = isCustomer ? (getCustomerFirebaseMessaging() || getFirebaseMessaging()) : getFirebaseMessaging();
 
       // Prepare the message
       const message: admin.messaging.MulticastMessage = {
@@ -198,7 +223,7 @@ export class FCMService {
         },
       };
 
-      const response = await messaging.sendMulticast(message);
+      const response = await messaging.sendEachForMulticast(message);
 
       logger.info(
         `Push notification sent: ${response.successCount} success, ${response.failureCount} failures`
@@ -206,7 +231,7 @@ export class FCMService {
 
       // Handle failed tokens
       if (response.failureCount > 0) {
-        await this.handleFailedTokens(tokens, response.responses);
+        await this.handleFailedTokens(tokens, response.responses, targetApp);
       }
     } catch (error) {
       logger.error('Failed to send push notification:', error);
@@ -300,14 +325,20 @@ export class FCMService {
   }
 
   /**
-   * Validate an FCM token - tries both primary and customer Firebase projects
-   * Returns the messaging instance that works or false if neither works
+   * Validate an FCM token - strictly uses the correct Firebase project
    */
-  async validateToken(token: string): Promise<boolean> {
+  async validateToken(token: string, appSource?: string, role?: string): Promise<boolean> {
     try {
-      const messaging = getFirebaseMessaging();
+      let isCustomer = true;
+      if (appSource) {
+        isCustomer = appSource === 'CUSTOMER_APP';
+      } else {
+        isCustomer = role !== 'BUDDY';
+      }
 
-      // Try to send a dry-run message to validate the token with primary project
+      const messaging = isCustomer ? (getCustomerFirebaseMessaging() || getFirebaseMessaging()) : getFirebaseMessaging();
+
+      // Try to send a dry-run message to validate the token
       await messaging.send(
         {
           token,
@@ -318,86 +349,56 @@ export class FCMService {
 
       return true;
     } catch (error: any) {
-      // Token might belong to a different Firebase project (e.g., customer app)
       if (
+        error.code === 'messaging/invalid-registration-token' ||
+        error.code === 'messaging/registration-token-not-registered' ||
         error.code === 'messaging/mismatched-credential' ||
         error.message?.includes('SenderId mismatch')
       ) {
-        logger.info('Token validation failed with primary project, trying customer project...');
-
-        // Try customer Firebase project
-        const customerMessaging = getCustomerFirebaseMessaging();
-        if (customerMessaging) {
-          try {
-            await customerMessaging.send(
-              {
-                token,
-                data: { test: 'validation' },
-              },
-              true // dry run
-            );
-            return true;
-          } catch (customerError: any) {
-            if (
-              customerError.code === 'messaging/invalid-registration-token' ||
-              customerError.code === 'messaging/registration-token-not-registered'
-            ) {
-              return false;
-            }
-            logger.error('Error validating FCM token with customer project:', customerError);
-            return false;
-          }
-        }
-      }
-
-      if (
-        error.code === 'messaging/invalid-registration-token' ||
-        error.code === 'messaging/registration-token-not-registered'
-      ) {
         return false;
       }
+
       logger.error('Error validating FCM token:', error);
-      return false;
+      // Return true for other errors to prevent blocking token registration due to temporary network issues
+      return true;
     }
   }
 
   /**
-   * Clean up invalid tokens for a user
+   * Periodically clean up invalid tokens for a user
    */
-  async cleanupInvalidTokens(userId: string): Promise<void> {
+  async cleanupTokens(userId: string): Promise<void> {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { deviceTokens: true },
+        select: { customerDeviceTokens: true, buddyDeviceTokens: true },
       });
 
-      if (!user || !user.deviceTokens || user.deviceTokens.length === 0) {
-        return;
-      }
+      if (!user) return;
 
-      const validTokens: string[] = [];
-
-      for (const token of user.deviceTokens) {
-        const isValid = await this.validateToken(token);
-        if (isValid) {
-          validTokens.push(token);
+      const checkAndClean = async (tokens: string[] | undefined, targetColumn: string, appSource: string) => {
+        if (!tokens || tokens.length === 0) return;
+        
+        const validTokens: string[] = [];
+        for (const token of tokens) {
+          const isValid = await this.validateToken(token, appSource);
+          if (isValid) {
+            validTokens.push(token);
+          }
         }
-      }
 
-      if (validTokens.length !== user.deviceTokens.length) {
-        await prisma.user.update({
-          where: { id: userId },
-          data: {
-            deviceTokens: {
-              set: validTokens,
-            },
-          },
-        });
+        if (validTokens.length !== tokens.length) {
+          await prisma.user.update({
+            where: { id: userId },
+            data: { [targetColumn]: { set: validTokens } },
+          });
+          logger.info(`Cleaned up ${tokens.length - validTokens.length} invalid tokens for user ${userId} in ${targetColumn}`);
+        }
+      };
 
-        logger.info(
-          `Cleaned up ${user.deviceTokens.length - validTokens.length} invalid tokens for user ${userId}`
-        );
-      }
+      await checkAndClean(user.customerDeviceTokens, 'customerDeviceTokens', 'CUSTOMER_APP');
+      await checkAndClean(user.buddyDeviceTokens, 'buddyDeviceTokens', 'BUDDY_APP');
+
     } catch (error) {
       logger.error(`Failed to cleanup tokens for user ${userId}:`, error);
     }
@@ -408,7 +409,8 @@ export class FCMService {
    */
   private async handleFailedTokens(
     tokens: string[],
-    responses: admin.messaging.SendResponse[]
+    responses: admin.messaging.SendResponse[],
+    targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'
   ): Promise<void> {
     const failedTokens: string[] = [];
 
@@ -417,7 +419,8 @@ export class FCMService {
         const error = response.error;
         if (
           error?.code === 'messaging/invalid-registration-token' ||
-          error?.code === 'messaging/registration-token-not-registered'
+          error?.code === 'messaging/registration-token-not-registered' ||
+          error?.code === 'messaging/mismatched-credential'
         ) {
           failedTokens.push(tokens[index]);
         }
@@ -425,30 +428,38 @@ export class FCMService {
     });
 
     if (failedTokens.length > 0) {
+      let targetColumn = 'customerDeviceTokens';
+      if (targetApp) {
+        targetColumn = targetApp === 'BUDDY_APP' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      }
+
       // Remove failed tokens from all users
       const users = await prisma.user.findMany({
         where: {
-          deviceTokens: {
+          [targetColumn]: {
             hasSome: failedTokens,
           },
         },
-        select: { id: true, deviceTokens: true },
+        select: { id: true, customerDeviceTokens: true, buddyDeviceTokens: true },
       });
 
       for (const user of users) {
-        const validTokens = user.deviceTokens.filter((token) => !failedTokens.includes(token));
-
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            deviceTokens: {
-              set: validTokens,
-            },
-          },
-        });
+        if (targetColumn === 'buddyDeviceTokens') {
+          const validTokens = (user.buddyDeviceTokens || []).filter((token: string) => !failedTokens.includes(token));
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { buddyDeviceTokens: validTokens },
+          });
+        } else {
+          const validTokens = (user.customerDeviceTokens || []).filter((token: string) => !failedTokens.includes(token));
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { customerDeviceTokens: validTokens },
+          });
+        }
       }
 
-      logger.info(`Removed ${failedTokens.length} invalid tokens from database`);
+      logger.info(`Removed ${failedTokens.length} invalid tokens from database column ${targetColumn}`);
     }
   }
 }

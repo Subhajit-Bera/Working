@@ -20,15 +20,29 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
   }
 }
 
+if (process.env.FIREBASE_CUSTOMER_PROJECT_ID && process.env.FIREBASE_CUSTOMER_PRIVATE_KEY) {
+  const existingApp = admin.apps.find(app => app?.name === 'customer');
+  if (!existingApp) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_CUSTOMER_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CUSTOMER_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_CUSTOMER_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      }),
+    }, 'customer');
+  }
+}
+
 const emailService = new EmailService();
 
 interface NotificationJobData {
   userId: string;
   data: any;
+  targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP';
 }
 
 export const notificationProcessor = async (job: Job<NotificationJobData>) => {
-  const { userId, data } = job.data;
+  const { userId, data, targetApp } = job.data;
   const notificationType = job.name;
 
   // ===== POISON PILL DETECTION =====
@@ -153,7 +167,7 @@ export const notificationProcessor = async (job: Job<NotificationJobData>) => {
       imageUrl,
       sound,
       data: stringifiedData,
-    });
+    }, targetApp);
 
     // Send email notification (optional)
     if (shouldSendEmail(notificationType)) {
@@ -174,16 +188,37 @@ export const notificationProcessor = async (job: Job<NotificationJobData>) => {
 // Send push notification via FCM with circuit breaker protection
 async function sendPushNotificationToUser(
   userId: string,
-  payload: FCMNotificationPayload
+  payload: FCMNotificationPayload,
+  targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'
 ): Promise<void> {
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { deviceTokens: true },
+      select: { customerDeviceTokens: true, buddyDeviceTokens: true },
     });
 
-    if (!user || !user.deviceTokens || user.deviceTokens.length === 0) {
-      logger.warn(`No device tokens found for user ${userId}`);
+    if (!user) {
+      logger.warn(`User ${userId} not found for notification`);
+      return;
+    }
+
+    // Determine target tokens based on targetApp
+    let targetTokens: string[] = [];
+
+    // STALE JOB FALLBACK: If targetApp is not provided (e.g. jobs already in queue before deployment)
+    if (!targetApp) {
+       // Infer from payload context
+       if (payload.data?.type && (payload.data.type.includes('job') || payload.data.type === 'review_received')) {
+           targetTokens = user.buddyDeviceTokens;
+       } else {
+           targetTokens = user.customerDeviceTokens;
+       }
+    } else {
+        targetTokens = targetApp === 'CUSTOMER_APP' ? user.customerDeviceTokens : user.buddyDeviceTokens;
+    }
+
+    if (!targetTokens || targetTokens.length === 0) {
+      logger.warn(`No device tokens found for user ${userId} in ${targetApp || 'inferred fallback'}`);
       return;
     }
 
@@ -192,7 +227,7 @@ async function sendPushNotificationToUser(
 
     try {
       await fcmCircuitBreaker.execute(async () => {
-        await sendPushNotification(user.deviceTokens, payload);
+        await sendPushNotification(targetTokens, payload, targetApp);
       });
     } catch (circuitError: any) {
       if (circuitError.circuitBreakerOpen) {

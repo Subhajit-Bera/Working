@@ -19,7 +19,8 @@ export class NotificationService {
     body: string,
     data?: any,
     bookingId?: string,
-    imageUrl?: string
+    imageUrl?: string,
+    targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'
   ): Promise<void> {
     try {
       // Create in DB
@@ -38,7 +39,7 @@ export class NotificationService {
       await addNotificationJob(
         type, // Job name
         userId,
-        { ...data, title, body, bookingId, imageUrl } // Pass all data to worker
+        { ...data, title, body, bookingId, imageUrl, targetApp } // Pass all data to worker
       );
     } catch (error) {
       logger.error(`Failed to create/queue notification ${type} for user ${userId}:`, error);
@@ -50,10 +51,11 @@ export class NotificationService {
    */
   private async sendRichPushNotification(
     userId: string,
-    payload: FCMNotificationPayload
+    payload: FCMNotificationPayload,
+    targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'
   ): Promise<void> {
     try {
-      await fcmService.sendToUser(userId, payload);
+      await fcmService.sendToUser(userId, payload, targetApp);
     } catch (error) {
       logger.error(`Failed to send rich push notification to user ${userId}:`, error);
     }
@@ -68,7 +70,8 @@ export class NotificationService {
     title: string,
     body: string,
     data?: any,
-    imageUrl?: string
+    imageUrl?: string,
+    targetApp?: 'CUSTOMER_APP' | 'BUDDY_APP'
   ): Promise<void> {
     try {
       // Create notifications in database for all users
@@ -95,7 +98,7 @@ export class NotificationService {
             Object.entries(data).map(([key, value]) => [key, String(value)])
           ) : undefined,
         },
-      });
+      }, targetApp);
 
       logger.info(`Batch notification sent to ${userIds.length} users`);
     } catch (error) {
@@ -116,7 +119,9 @@ export class NotificationService {
       title,
       body,
       { bookingId: booking.id, serviceTitle: booking.service.title },
-      booking.id
+      booking.id,
+      undefined,
+      'CUSTOMER_APP'
     );
 
     // Send rich push notification with image
@@ -131,7 +136,7 @@ export class NotificationService {
       },
       clickAction: `/bookings/${booking.id}`,
       sound: 'default',
-    });
+    }, 'CUSTOMER_APP');
 
     emitToUser(userId, 'notification', { type: 'booking_created', booking });
     emitToAdmins('admin:feed', {
@@ -164,7 +169,8 @@ export class NotificationService {
         price: booking.employeePayout,
       },
       booking.id,
-      booking.service.imageUrl
+      booking.service.imageUrl,
+      'BUDDY_APP'
     );
 
     // Send rich push notification with custom sound
@@ -185,7 +191,7 @@ export class NotificationService {
       clickAction: `/jobs/${booking.id}`,
       sound: 'job_alert',
       badge: 1,
-    });
+    }, 'BUDDY_APP');
 
     emitToBuddy(buddyId, 'job:assigned', { booking, assignmentId: assignmentDetails?.assignmentId });
     emitToAdmins('admin:feed', {
@@ -211,7 +217,8 @@ export class NotificationService {
       body,
       { bookingId: booking.id, buddyId: buddy.id, buddyName: buddy.user.name },
       booking.id,
-      buddy.user.profileImage
+      buddy.user.profileImage,
+      'CUSTOMER_APP'
     );
 
     // Send rich push notification with buddy profile image
@@ -226,7 +233,7 @@ export class NotificationService {
         buddyName: buddy.user.name,
       },
       clickAction: `/bookings/${booking.id}`,
-    });
+    }, 'CUSTOMER_APP');
 
     emitToUser(userId, 'booking:assigned', { booking, buddyName: buddy.user.name });
   }
@@ -244,7 +251,9 @@ export class NotificationService {
       title,
       body,
       { bookingId: booking.id },
-      booking.id
+      booking.id,
+      undefined,
+      'CUSTOMER_APP'
     );
 
     await this.sendRichPushNotification(userId, {
@@ -280,7 +289,9 @@ export class NotificationService {
       title,
       body,
       { bookingId: booking.id },
-      booking.id
+      booking.id,
+      undefined,
+      'CUSTOMER_APP'
     );
 
     await this.sendRichPushNotification(userId, {
@@ -292,7 +303,7 @@ export class NotificationService {
       },
       clickAction: `/bookings/${booking.id}`,
       sound: 'service_started',
-    });
+    }, 'CUSTOMER_APP');
 
     emitToUser(userId, 'booking:started', { bookingId: booking.id });
   }
@@ -310,7 +321,9 @@ export class NotificationService {
       title,
       body,
       { bookingId: booking.id, serviceTitle: booking.service?.title || 'service' },
-      booking.id
+      booking.id,
+      undefined,
+      'CUSTOMER_APP'
     );
 
     await this.sendRichPushNotification(userId, {
@@ -322,7 +335,7 @@ export class NotificationService {
       },
       clickAction: `/bookings/${booking.id}/review`,
       sound: 'completion',
-    });
+    }, 'CUSTOMER_APP');
 
     emitToUser(userId, 'booking:completed', { bookingId: booking.id });
     emitToAdmins('admin:feed', {
@@ -347,7 +360,9 @@ export class NotificationService {
       title,
       body,
       { bookingId: booking.id },
-      booking.id
+      booking.id,
+      undefined,
+      'BUDDY_APP'
     );
 
     await this.sendRichPushNotification(buddyId, {
@@ -358,7 +373,7 @@ export class NotificationService {
         bookingId: booking.id,
       },
       clickAction: `/jobs/${booking.id}`,
-    });
+    }, 'BUDDY_APP');
 
     emitToBuddy(buddyId, 'job:cancelled', { bookingId: booking.id });
   }
@@ -376,7 +391,9 @@ export class NotificationService {
       title,
       body,
       { reviewId: review.id, rating: review.rating },
-      review.bookingId
+      review.bookingId,
+      undefined,
+      'BUDDY_APP'
     );
 
     await this.sendRichPushNotification(buddyId, {
@@ -389,7 +406,7 @@ export class NotificationService {
       },
       clickAction: `/reviews/${review.id}`,
       sound: 'review_received',
-    });
+    }, 'BUDDY_APP');
 
     emitToBuddy(buddyId, 'review:received', { review });
   }
@@ -420,7 +437,9 @@ export class NotificationService {
           serviceTitle: booking.service.title,
           address: booking.address.formattedAddress,
         },
-        booking.id
+        booking.id,
+        undefined,
+        'CUSTOMER_APP' // Admins typically use the customer app for notifications
       );
     }
 
@@ -437,7 +456,8 @@ export class NotificationService {
           serviceTitle: booking.service.title,
           address: booking.address.formattedAddress,
         },
-        booking.service.imageUrl
+        booking.service.imageUrl,
+        'CUSTOMER_APP'
       );
     }
 
@@ -460,7 +480,9 @@ export class NotificationService {
       title,
       body,
       { bookingId: booking.id },
-      booking.id
+      booking.id,
+      undefined,
+      'CUSTOMER_APP'
     );
 
     // Send rich push notification
@@ -473,7 +495,7 @@ export class NotificationService {
       },
       clickAction: `/bookings/${booking.id}`,
       sound: 'default', // You can use a specific sound like 'doorbell' if configured in app
-    });
+    }, 'CUSTOMER_APP');
   }
 }
 

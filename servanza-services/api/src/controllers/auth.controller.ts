@@ -241,8 +241,9 @@ export class AuthController {
 
   async registerFCMToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { token } = req.body;
+      const { token, appSource } = req.body;
       const userId = req.user?.id;
+      const role = req.user?.role;
 
       if (!userId) {
         res.status(401).json({
@@ -252,7 +253,7 @@ export class AuthController {
         return;
       }
 
-      await fcmService.registerDeviceToken(userId, token);
+      await fcmService.registerDeviceToken(userId, token, appSource, role);
 
       res.json({
         success: true,
@@ -265,8 +266,9 @@ export class AuthController {
 
   async removeFCMToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { token } = req.body;
+      const { token, appSource } = req.body;
       const userId = req.user?.id;
+      const role = req.user?.role;
 
       if (!userId) {
         res.status(401).json({
@@ -276,7 +278,7 @@ export class AuthController {
         return;
       }
 
-      await fcmService.removeDeviceToken(userId, token);
+      await fcmService.removeDeviceToken(userId, token, appSource, role);
 
       res.json({
         success: true,

@@ -542,7 +542,8 @@ model User {
   emailVerified Boolean        @default(false)
   phoneVerified Boolean        @default(false)
   profileImage  String?
-  deviceTokens  String[]       @default([]) // FCM tokens
+  customerDeviceTokens String[]       @default([]) @map("deviceTokens") // Customer FCM tokens
+  buddyDeviceTokens    String[]       @default([]) // Buddy FCM tokens
   metadata      Json?          // Flexible JSON for additional data
   resetTokenHash    String?        // SHA-256 hash of password reset token
   resetTokenExpiry  DateTime?      // Expiry time for password reset token

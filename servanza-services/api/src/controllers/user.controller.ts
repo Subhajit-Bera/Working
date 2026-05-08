@@ -218,20 +218,26 @@ export class UserController {
   async registerDeviceToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const { token } = req.body;
+      const { token, appSource } = req.body;
+      const userRole = req.user!.role;
 
       if (!token) {
         throw new ApiError(400, 'Device token is required');
       }
 
+      let targetColumn = 'customerDeviceTokens';
+      if (appSource) {
+        targetColumn = appSource === 'BUDDY_APP' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      } else {
+        targetColumn = userRole === 'BUDDY' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      }
+
       // Replace all tokens with just the current one
-      // This is the simplest approach for mobile apps where each user typically has one device
-      // For multi-device support, you'd want to use 'push' and implement token cleanup
       await prisma.user.update({
         where: { id: userId },
         data: {
-          deviceTokens: {
-            set: [token], // Replace with only the current token
+          [targetColumn]: {
+            set: [token],
           },
         },
       });
@@ -245,19 +251,28 @@ export class UserController {
   async unregisterDeviceToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const { token } = req.body;
+      const { token, appSource } = req.body;
+      const userRole = req.user!.role;
+
       if (!token) {
         throw new ApiError(400, 'Device token is required');
       }
 
-      const user = await prisma.user.findUnique({ where: { id: userId }, select: { deviceTokens: true } });
+      let targetColumn = 'customerDeviceTokens';
+      if (appSource) {
+        targetColumn = appSource === 'BUDDY_APP' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      } else {
+        targetColumn = userRole === 'BUDDY' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
+      }
 
-      const newTokens = user?.deviceTokens.filter((t: any) => t !== token) || [];
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { [targetColumn]: true } });
+
+      const newTokens = (user as any)?.[targetColumn]?.filter((t: any) => t !== token) || [];
 
       await prisma.user.update({
         where: { id: userId },
         data: {
-          deviceTokens: {
+          [targetColumn]: {
             set: newTokens,
           },
         },

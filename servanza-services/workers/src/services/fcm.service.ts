@@ -17,7 +17,8 @@ export interface FCMNotificationPayload {
  */
 export async function sendPushNotification(
   tokens: string[],
-  payload: FCMNotificationPayload
+  payload: FCMNotificationPayload,
+  targetApp: 'CUSTOMER_APP' | 'BUDDY_APP' = 'BUDDY_APP'
 ): Promise<void> {
   try {
     if (!tokens || tokens.length === 0) {
@@ -74,15 +75,27 @@ export async function sendPushNotification(
       tokens: tokens,
     };
 
-    const response = await admin.messaging().sendEachForMulticast(message);
+    // Resolve target messaging instance
+    let messaging = admin.messaging();
+
+    if (targetApp === 'CUSTOMER_APP') {
+      const customerApp = admin.apps.find(app => app?.name === 'customer');
+      if (customerApp) {
+        messaging = admin.messaging(customerApp);
+      } else {
+        logger.warn('Customer Firebase App not found, falling back to primary messaging');
+      }
+    }
+
+    const response = await messaging.sendEachForMulticast(message);
 
     logger.info(
-      `Push notification sent: ${response.successCount} success, ${response.failureCount} failures`
+      `Push notification sent to ${targetApp}: ${response.successCount} success, ${response.failureCount} failures`
     );
 
     // Handle failed tokens
     if (response.failureCount > 0) {
-      await handleFailedTokens(tokens, response.responses);
+      await handleFailedTokens(tokens, response.responses, targetApp);
     }
   } catch (error) {
     logger.error('Failed to send push notification:', error);
@@ -95,7 +108,8 @@ export async function sendPushNotification(
  */
 async function handleFailedTokens(
   tokens: string[],
-  responses: admin.messaging.SendResponse[]
+  responses: admin.messaging.SendResponse[],
+  targetApp: 'CUSTOMER_APP' | 'BUDDY_APP'
 ): Promise<void> {
   const failedTokens: string[] = [];
 
@@ -115,29 +129,32 @@ async function handleFailedTokens(
   });
 
   if (failedTokens.length > 0) {
-    // Remove failed tokens from all users
+    const targetColumn = targetApp === 'CUSTOMER_APP' ? 'customerDeviceTokens' : 'buddyDeviceTokens';
+
+    // Remove failed tokens from all users (in the specific column)
     const users = await prisma.user.findMany({
       where: {
-        deviceTokens: {
+        [targetColumn]: {
           hasSome: failedTokens,
         },
       },
-      select: { id: true, deviceTokens: true },
+      select: { id: true, customerDeviceTokens: true, buddyDeviceTokens: true },
     });
 
     for (const user of users) {
-      const validTokens = user.deviceTokens.filter((token) => !failedTokens.includes(token));
+      const currentTokens = targetApp === 'CUSTOMER_APP' ? user.customerDeviceTokens : user.buddyDeviceTokens;
+      const validTokens = currentTokens.filter((token) => !failedTokens.includes(token));
 
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          deviceTokens: {
+          [targetColumn]: {
             set: validTokens,
           },
         },
       });
     }
 
-    logger.info(`Removed ${failedTokens.length} invalid tokens from database`);
+    logger.info(`Removed ${failedTokens.length} invalid tokens from ${targetColumn}`);
   }
 }
