@@ -170,6 +170,9 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
   // --- Start and Complete handlers remain mostly the same ---
   // (Include previous implementation for job:start and job:complete here)
   socket.on('job:start', async (data: { assignmentId: string }) => {
+    const ipAddress = socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address;
+    if (!(await checkDistributedRateLimit(ipAddress, socket.data.userId, 'job:start', socket))) return;
+    
     /* ... existing implementation ... */
     try {
       await prisma.assignment.update({
@@ -186,6 +189,9 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
   });
 
   socket.on('job:complete', async (data: { assignmentId: string; otp?: string }) => {
+    const ipAddress = socket.handshake.headers['x-forwarded-for'] as string || socket.handshake.address;
+    if (!(await checkDistributedRateLimit(ipAddress, socket.data.userId, 'job:complete', socket))) return;
+
     /* ... call bookingService.completeBookingAndAssignment ... */
     try {
       const buddyId = socket.data.userId; // Map correctly if needed
