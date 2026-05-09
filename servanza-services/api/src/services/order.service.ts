@@ -144,6 +144,18 @@ export class OrderService {
       overrideTotalAmount: totalAmount,
       overrideEmployeePayout: totalEmployeePayout,
       overrideCmpPayout: totalCmpPayout,
+      metadata: {
+         items: data.items.map((item: any) => {
+             const service = services.find(s => s.id === item.serviceId);
+             return {
+                 serviceId: item.serviceId,
+                 quantity: item.quantity || 1,
+                 title: service?.title,
+                 imageUrl: service?.imageUrl,
+                 price: service?.basePrice
+             };
+         })
+      }
     };
 
     const booking = await this.bookingService.createBooking(userId, bookingData);
@@ -177,6 +189,17 @@ export class OrderService {
           bookings: {
             include: {
               service: true,
+              assignments: {
+                include: {
+                  buddy: {
+                    include: {
+                      user: { select: { id: true, name: true, phone: true, profileImage: true } }
+                    }
+                  }
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 1
+              }
             },
           },
         },

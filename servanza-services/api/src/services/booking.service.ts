@@ -27,6 +27,7 @@ interface CreateBookingData {
   overrideTotalAmount?: number;
   overrideEmployeePayout?: number;
   overrideCmpPayout?: number;
+  metadata?: any;
 }
 
 interface BookingFilters {
@@ -141,6 +142,7 @@ export class BookingService {
             lastRetryAt: null,
             escalatedAt: null,
             excludedBuddyIds: [],
+            metadata: data.metadata,
           },
           include: {
             service: true,
