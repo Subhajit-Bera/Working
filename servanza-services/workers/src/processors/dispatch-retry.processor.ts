@@ -5,6 +5,23 @@ import { logger } from '../utils/logger';
 import { addAssignmentJob } from '../config/queue';
 import { emitToAdmins } from '../utils/socket-emitter';
 
+/**
+ * Compute a display title from booking metadata for multi-service bookings.
+ */
+function getWorkerDisplayTitle(booking: any): string {
+  try {
+    const raw = booking.metadata;
+    const items = typeof raw === 'string' ? JSON.parse(raw)?.items : raw?.items;
+    if (Array.isArray(items) && items.length > 1) {
+      return `${items[0].title} + ${items.length - 1} more`;
+    }
+    if (Array.isArray(items) && items.length === 1) {
+      return items[0].title;
+    }
+  } catch (e) { /* fall through */ }
+  return booking.service?.title || 'Service Booking';
+}
+
 // Configuration
 const RETRY_INTERVAL_MINS = 5;       // Check every 5 minutes
 const WORK_START_HOUR = 9;           // 9:00 AM IST
@@ -179,7 +196,7 @@ async function escalateToAdmin(booking: any, maxRetries: number) {
         // Emit socket event to all admins
         emitToAdmins('booking:escalated', {
             bookingId: booking.id,
-            serviceTitle: booking.service?.title,
+            serviceTitle: getWorkerDisplayTitle(booking),
             address: booking.address?.formattedAddress,
             scheduledStart: booking.scheduledStart,
             reason: `No buddy accepted after ${maxRetries} retry attempts`,

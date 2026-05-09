@@ -114,18 +114,13 @@ export class OrderService {
     // 5. Create Single Master Booking
     let totalEmployeePayout = 0;
     let totalCmpPayout = 0;
-    const serviceDetails: string[] = [];
-
     for (const item of data.items) {
       const service = services.find(s => s.id === item.serviceId);
       if (service) {
         totalEmployeePayout += service.employeePayout * (item.quantity || 1);
         totalCmpPayout += service.cmpPayout * (item.quantity || 1);
-        serviceDetails.push(`${item.quantity}x ${service.title}`);
       }
     }
-
-    const aggregatedInstructions = `ORDER INCLUDES: ${serviceDetails.join(', ')}\n\nCustomer Notes: ${data.specialInstructions || 'None'}`;
 
     const primaryServiceId = data.items[0].serviceId;
 
@@ -135,7 +130,7 @@ export class OrderService {
       scheduledStart: data.scheduledStart,
       isImmediate: data.isImmediate,
       paymentMethod: data.paymentMethod,
-      specialInstructions: aggregatedInstructions,
+      specialInstructions: data.specialInstructions || undefined,
       orderId: order.id,
       contactPhone: data.contactPhone,
       couponCode: data.couponCode,

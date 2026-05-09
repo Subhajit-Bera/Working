@@ -6,6 +6,24 @@ import { addNotificationJob } from '../config/queue';
 import { GeoService } from '../services/geospatial.service';
 import { emitToBuddy } from '../utils/socket-emitter';
 
+/**
+ * Compute a display title from booking metadata for multi-service bookings.
+ * Falls back to booking.service.title for legacy single-service bookings.
+ */
+function getWorkerDisplayTitle(booking: any): string {
+  try {
+    const raw = booking.metadata;
+    const items = typeof raw === 'string' ? JSON.parse(raw)?.items : raw?.items;
+    if (Array.isArray(items) && items.length > 1) {
+      return `${items[0].title} + ${items.length - 1} more`;
+    }
+    if (Array.isArray(items) && items.length === 1) {
+      return items[0].title;
+    }
+  } catch (e) { /* fall through */ }
+  return booking.service?.title || 'Service Booking';
+}
+
 interface AssignmentJobData { bookingId: string; }
 
 /**
@@ -93,7 +111,7 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
       const jobPayload = {
         assignmentId: assignment.id,
         bookingId: booking.id,
-        serviceTitle: booking.service.title,
+        serviceTitle: getWorkerDisplayTitle(booking),
         address: booking.address.formattedAddress,
         distance: assignment.distance.toFixed(1),
         price: booking.employeePayout,

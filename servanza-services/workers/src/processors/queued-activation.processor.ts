@@ -5,6 +5,23 @@ import { logger } from '../utils/logger';
 import { addAssignmentJob } from '../config/queue';
 import { emitToUser } from '../utils/socket-emitter';
 
+/**
+ * Compute a display title from booking metadata for multi-service bookings.
+ */
+function getWorkerDisplayTitle(booking: any): string {
+  try {
+    const raw = booking.metadata;
+    const items = typeof raw === 'string' ? JSON.parse(raw)?.items : raw?.items;
+    if (Array.isArray(items) && items.length > 1) {
+      return `${items[0].title} + ${items.length - 1} more`;
+    }
+    if (Array.isArray(items) && items.length === 1) {
+      return items[0].title;
+    }
+  } catch (e) { /* fall through */ }
+  return booking.service?.title || 'Service Booking';
+}
+
 interface QueuedActivationJobData {
     // Empty - runs on schedule at 9 AM IST
 }
@@ -54,7 +71,7 @@ export const queuedActivationProcessor = async (job: Job<QueuedActivationJobData
             // Notify customer their booking is now active
             emitToUser(booking.userId, 'booking:activated', {
                 bookingId: booking.id,
-                serviceTitle: booking.service?.title,
+                serviceTitle: getWorkerDisplayTitle(booking),
                 message: 'Your booking is now being processed!'
             });
 
