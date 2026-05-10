@@ -40,20 +40,18 @@ export async function sendPushNotification(
     }
 
     const baseMessage = {
-      notification: {
+      // DATA-ONLY payload: no 'notification' key.
+      // This prevents Android from auto-displaying a system tray notification
+      // while the app's onMessage handler also creates one (duplicate).
+      // The client reads title/body from data and renders locally.
+      data: {
+        ...stringifiedData,
         title: payload.title,
         body: payload.body,
-        imageUrl: payload.imageUrl,
+        ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
       },
-      data: stringifiedData,
       android: {
         priority: 'high' as const,
-        notification: {
-          sound: payload.sound || 'default',
-          channelId: 'default',
-          clickAction: payload.clickAction,
-          imageUrl: payload.imageUrl,
-        },
       },
       apns: {
         payload: {
@@ -61,6 +59,10 @@ export async function sendPushNotification(
             sound: payload.sound || 'default',
             badge: payload.badge || 1,
             contentAvailable: true,
+            alert: {
+              title: payload.title,
+              body: payload.body,
+            },
           },
         },
         fcmOptions: {

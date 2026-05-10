@@ -20,7 +20,7 @@ export const updateBookingSchema = z.object({
 
 export const cancelBookingSchema = z.object({
   body: z.object({
-    reason: z.string().min(10).max(500),
+    reason: z.string().max(500).optional(),
   }),
 });
 
