@@ -84,10 +84,16 @@ export class OrderService {
     const taxAmount = Math.round(discountedSubtotal * 0.18);
     const totalAmount = discountedSubtotal + taxAmount;
 
-    // Use duration of first service for scheduledEnd of the order for simplicity
-    const firstService = services[0];
+    let totalDurationMins = 0;
+    for (const item of data.items) {
+      const service = services.find(s => s.id === item.serviceId);
+      if (service) {
+        totalDurationMins += service.durationMins * (item.quantity || 1);
+      }
+    }
+
     const scheduledStart = new Date(data.scheduledStart);
-    const scheduledEnd = new Date(scheduledStart.getTime() + firstService.durationMins * 60000);
+    const scheduledEnd = new Date(scheduledStart.getTime() + totalDurationMins * 60000);
 
     // 4. Create Order record
     const orderNumber = this.generateOrderNumber();
@@ -139,17 +145,18 @@ export class OrderService {
       overrideTotalAmount: totalAmount,
       overrideEmployeePayout: totalEmployeePayout,
       overrideCmpPayout: totalCmpPayout,
+      overrideDurationMins: totalDurationMins,
       metadata: {
-         items: data.items.map((item: any) => {
-             const service = services.find(s => s.id === item.serviceId);
-             return {
-                 serviceId: item.serviceId,
-                 quantity: item.quantity || 1,
-                 title: service?.title,
-                 imageUrl: service?.imageUrl,
-                 price: service?.basePrice
-             };
-         })
+        items: data.items.map((item: any) => {
+          const service = services.find(s => s.id === item.serviceId);
+          return {
+            serviceId: item.serviceId,
+            quantity: item.quantity || 1,
+            title: service?.title,
+            imageUrl: service?.imageUrl,
+            price: service?.basePrice
+          };
+        })
       }
     };
 
@@ -168,7 +175,7 @@ export class OrderService {
 
     // Filter by order bookings status if provided
     let whereClause: any = { userId };
-    
+
     if (status && status !== 'ALL') {
       whereClause.bookings = {
         some: { status: status as BookingStatus }
@@ -185,6 +192,9 @@ export class OrderService {
             include: {
               service: true,
               assignments: {
+                where: {
+                  status: { in: ['ACCEPTED', 'COMPLETED', 'CANCELLED'] }
+                },
                 include: {
                   buddy: {
                     include: {

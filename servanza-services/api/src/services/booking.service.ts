@@ -27,6 +27,7 @@ interface CreateBookingData {
   overrideTotalAmount?: number;
   overrideEmployeePayout?: number;
   overrideCmpPayout?: number;
+  overrideDurationMins?: number;
   metadata?: any;
 }
 
@@ -68,7 +69,8 @@ export class BookingService {
       }
 
       const scheduledStart = new Date(data.scheduledStart);
-      const scheduledEnd = new Date(scheduledStart.getTime() + service.durationMins * 60000);
+      const duration = data.overrideDurationMins ?? service.durationMins;
+      const scheduledEnd = new Date(scheduledStart.getTime() + duration * 60000);
 
       const price = data.overridePrice ?? service.basePrice;
       const taxAmount = data.overrideTaxAmount ?? (price * 0.18);
@@ -207,7 +209,7 @@ export class BookingService {
     const { status, page = 1, limit = 10 } = filters;
 
     const where: any = { userId };
-    let assignmentStatusFilter: AssignmentStatus[] = [AssignmentStatus.PENDING, AssignmentStatus.ACCEPTED];
+    let assignmentStatusFilter: AssignmentStatus[] = [AssignmentStatus.ACCEPTED];
 
     if (status) {
       // Status may come as string; keep it flexible
@@ -284,6 +286,11 @@ export class BookingService {
         },
         address: true,
         assignments: {
+          where: {
+            status: {
+              in: [AssignmentStatus.ACCEPTED, AssignmentStatus.COMPLETED, AssignmentStatus.CANCELLED],
+            },
+          },
           include: {
             buddy: {
               include: {

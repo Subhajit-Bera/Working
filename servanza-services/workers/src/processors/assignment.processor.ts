@@ -117,6 +117,8 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
         price: booking.employeePayout,
         isImmediate: booking.isImmediate,
         scheduledStart: booking.scheduledStart.toISOString(),
+        scheduledEnd: booking.scheduledEnd.toISOString(),
+        metadata: booking.metadata,
       };
 
       // Send push notification
