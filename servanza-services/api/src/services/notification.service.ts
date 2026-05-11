@@ -39,7 +39,7 @@ export class NotificationService {
       await addNotificationJob(
         type, // Job name
         userId,
-        { ...data, title, body, bookingId, imageUrl, targetApp } // Pass all data to worker
+        { ...data, title, body, bookingId, imageUrl, targetApp, skipDbAndPush: true } // Pass all data to worker
       );
     } catch (error) {
       logger.error(`Failed to create/queue notification ${type} for user ${userId}:`, error);

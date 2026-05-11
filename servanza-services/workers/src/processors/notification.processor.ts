@@ -59,115 +59,131 @@ export const notificationProcessor = async (job: Job<NotificationJobData>) => {
   logger.info(`Processing notification: ${notificationType} for user ${userId}`);
 
   try {
-    let title = '';
-    let body = '';
+    let title = data.title || '';
+    let body = data.body || '';
     let notifType: NotificationType = NotificationType.GENERAL;
-    let imageUrl: string | undefined;
-    let sound: string | undefined;
+    let imageUrl: string | undefined = data.imageUrl;
+    let sound: string | undefined = data.sound;
 
     switch (notificationType) {
       // Buddy Notifications
       case 'buddy-assignment':
-        title = 'New Job Available';
-        body = `New job: ${data.serviceTitle} at ${data.address}`;
+      case NotificationType.BOOKING_ASSIGNED:
+        if (notificationType === 'buddy-assignment' || data.targetApp === 'BUDDY_APP') {
+            title = title || 'New Job Available';
+            body = body || `New job: ${data.serviceTitle} at ${data.address}`;
+            sound = sound || 'job_alert';
+        } else {
+            title = title || 'Buddy Assigned';
+            body = body || `${data.buddyName} has been assigned to your booking`;
+        }
         notifType = NotificationType.BOOKING_ASSIGNED;
-        sound = 'job_alert';
         break;
       case 'review-received':
-        title = 'New Review';
-        body = `You received a ${data.rating}-star review!`;
+      case NotificationType.RATING_RECEIVED:
+        title = title || 'New Review';
+        body = body || `You received a ${data.rating}-star review!`;
         notifType = NotificationType.RATING_RECEIVED;
-        sound = 'review_received';
+        sound = sound || 'review_received';
         break;
 
       // User Notifications
       case 'user-assignment':
-        title = 'Buddy Assigned';
-        body = `${data.buddyName} has been assigned to your booking`;
+        title = title || 'Buddy Assigned';
+        body = body || `${data.buddyName} has been assigned to your booking`;
         notifType = NotificationType.BOOKING_ASSIGNED;
         break;
       case 'booking-accepted':
-        title = 'Booking Accepted';
-        body = 'Your booking has been accepted by the buddy';
+      case NotificationType.BOOKING_ACCEPTED:
+        title = title || 'Booking Accepted';
+        body = body || 'Your booking has been accepted by the buddy';
         notifType = NotificationType.BOOKING_ACCEPTED;
         break;
       case 'booking-started':
-        title = 'Service Started';
-        body = 'The buddy has started working on your booking';
+      case NotificationType.BOOKING_STARTED:
+        title = title || 'Service Started';
+        body = body || 'The buddy has started working on your booking';
         notifType = NotificationType.BOOKING_STARTED;
         break;
       case 'booking-completed':
-        title = 'Service Completed';
-        body = 'Your booking has been completed. Please rate your experience!';
+      case NotificationType.BOOKING_COMPLETED:
+        title = title || 'Service Completed';
+        body = body || 'Your booking has been completed. Please rate your experience!';
         notifType = NotificationType.BOOKING_COMPLETED;
-        sound = 'completion';
+        sound = sound || 'completion';
         break;
       case 'booking-cancelled':
-        title = 'Booking Cancelled';
-        body = 'Your booking has been cancelled';
+      case NotificationType.BOOKING_CANCELLED:
+        title = title || 'Booking Cancelled';
+        body = body || 'Your booking has been cancelled';
         notifType = NotificationType.BOOKING_CANCELLED;
         break;
       case 'payment-received':
-        title = 'Payment Received';
-        body = 'Your payment has been processed successfully';
+      case NotificationType.PAYMENT_RECEIVED:
+        title = title || 'Payment Received';
+        body = body || 'Your payment has been processed successfully';
         notifType = NotificationType.PAYMENT_RECEIVED;
         break;
 
       // Auth Notifications
       case 'auth-verification-email':
-        title = 'Verify your email';
-        body = 'Please verify your email address to complete signup.';
+      case NotificationType.AUTH_VERIFICATION:
+        title = title || 'Verify your email';
+        body = body || 'Please verify your email address to complete signup.';
         notifType = NotificationType.AUTH_VERIFICATION;
         break;
       case 'auth-password-reset-email':
-        title = 'Password Reset Request';
-        body = 'You requested a password reset. Check your email.';
+      case NotificationType.AUTH_PASSWORD_RESET:
+        title = title || 'Password Reset Request';
+        body = body || 'You requested a password reset. Check your email.';
         notifType = NotificationType.AUTH_PASSWORD_RESET;
         break;
 
       // Admin Notifications
       case 'admin-no-buddies':
-        title = 'Alert: No Buddies Available';
-        body = `No buddies found for booking ${data.bookingId} (${data.serviceTitle})`;
+        title = title || 'Alert: No Buddies Available';
+        body = body || `No buddies found for booking ${data.bookingId} (${data.serviceTitle})`;
         notifType = NotificationType.GENERAL;
         break;
 
       default:
-        title = 'Notification';
-        body = data.message || 'You have a new notification';
+        title = title || 'Notification';
+        body = body || data.message || 'You have a new notification';
     }
 
-    // Create notification in database
-    await prisma.notification.create({
-      data: {
-        userId,
-        type: notifType,
+    if (!data.skipDbAndPush) {
+      // Create notification in database
+      await prisma.notification.create({
+        data: {
+          userId,
+          type: notifType,
+          title,
+          body,
+          data: data,
+          bookingId: data.bookingId,
+        },
+      });
+
+      // Send push notification using FCM service
+      // FCM data payload requires ALL values to be strings
+      const stringifiedData: Record<string, string> = {
+        type: notificationType,
+        bookingId: data.bookingId || '',
+      };
+
+      // Convert all data values to strings
+      for (const [key, value] of Object.entries(data)) {
+        stringifiedData[key] = String(value);
+      }
+
+      await sendPushNotificationToUser(userId, {
         title,
         body,
-        data: data,
-        bookingId: data.bookingId,
-      },
-    });
-
-    // Send push notification using FCM service
-    // FCM data payload requires ALL values to be strings
-    const stringifiedData: Record<string, string> = {
-      type: notificationType,
-      bookingId: data.bookingId || '',
-    };
-
-    // Convert all data values to strings
-    for (const [key, value] of Object.entries(data)) {
-      stringifiedData[key] = String(value);
+        imageUrl,
+        sound,
+        data: stringifiedData,
+      }, targetApp);
     }
-
-    await sendPushNotificationToUser(userId, {
-      title,
-      body,
-      imageUrl,
-      sound,
-      data: stringifiedData,
-    }, targetApp);
 
     // Send email notification (optional)
     if (shouldSendEmail(notificationType)) {
@@ -314,6 +330,11 @@ function shouldSendEmail(notificationType: string): boolean {
     'booking-cancelled',
     'auth-verification-email',
     'auth-password-reset-email',
+    NotificationType.BOOKING_COMPLETED,
+    NotificationType.PAYMENT_RECEIVED,
+    NotificationType.BOOKING_CANCELLED,
+    NotificationType.AUTH_VERIFICATION,
+    NotificationType.AUTH_PASSWORD_RESET
   ];
-  return emailTypes.includes(notificationType);
+  return emailTypes.includes(notificationType as any);
 }

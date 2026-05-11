@@ -112,6 +112,18 @@ export class BookingService {
 
       let backupId: string | null = null;
       const isImmediateBooking = data.isImmediate || service.isInstant || false;
+
+      // Reject immediate bookings if outside 9 AM to 8 PM window in IST
+      if (isImmediateBooking) {
+        const now = new Date();
+        const istString = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+        const istDate = new Date(istString);
+        const hour = istDate.getHours();
+        if (hour < 9 || hour >= 20) {
+            throw new ApiError(400, 'Instant bookings are not available at this time.');
+        }
+      }
+
       const priority = isImmediateBooking ? 1 : 5;
 
       const booking = await withDbRetry(() => prisma.$transaction(async (tx) => {
