@@ -607,6 +607,9 @@ export class BookingService {
     emitToUser(booking.userId, 'booking:completed', {
       bookingId: booking.id,
     });
+    emitToUser(booking.userId, 'booking:updated', {
+      bookingId: booking.id,
+    });
 
     logger.info(`Job completed: ${assignmentId} by buddy ${actorBuddyId}`);
     return { booking: updatedBooking, assignment: updatedAssignment };

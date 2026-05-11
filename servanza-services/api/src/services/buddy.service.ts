@@ -832,6 +832,9 @@ export class BuddyService {
       assignmentId,
       message: 'Your service provider is on the way!',
     });
+    emitToUser(assignment.booking.userId, 'booking:updated', {
+      bookingId: assignment.bookingId,
+    });
 
     logger.info(`Buddy ${buddyId} started tracking for job ${assignmentId}`);
   }
@@ -895,6 +898,9 @@ export class BuddyService {
       assignmentId,
       message: 'Buddy at your doorstep',
     });
+    emitToUser(assignment.booking.userId, 'booking:updated', {
+      bookingId: assignment.bookingId,
+    });
 
     logger.info(`Buddy arrived: ${assignmentId} by buddy ${buddyId}`);
   }
@@ -955,6 +961,9 @@ export class BuddyService {
     eventBus.emit('notify:user:started', { args: [assignment.booking.userId, assignment.booking] });
 
     emitToUser(assignment.booking.userId, 'booking:started', {
+      bookingId: assignment.bookingId,
+    });
+    emitToUser(assignment.booking.userId, 'booking:updated', {
       bookingId: assignment.bookingId,
     });
 
@@ -1236,6 +1245,10 @@ export class BuddyService {
           otp,
         },
       ],
+    });
+
+    emitToUser(assignment.booking.userId, 'booking:updated', {
+      bookingId: assignment.bookingId,
     });
 
     logger.info(`[BuddyService] Sent completion OTP for assignment ${assignmentId} to user ${assignment.booking.userId}`);

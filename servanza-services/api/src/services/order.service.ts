@@ -193,7 +193,7 @@ export class OrderService {
               service: true,
               assignments: {
                 where: {
-                  status: { in: ['ACCEPTED', 'COMPLETED', 'CANCELLED'] }
+                  status: { in: ['ACCEPTED', 'ON_WAY', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] }
                 },
                 include: {
                   buddy: {
