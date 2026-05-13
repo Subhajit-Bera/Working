@@ -232,15 +232,19 @@ export class UserController {
         targetColumn = userRole === 'BUDDY' ? 'buddyDeviceTokens' : 'customerDeviceTokens';
       }
 
-      // Replace all tokens with just the current one
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          [targetColumn]: {
-            set: [token],
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { [targetColumn]: true } });
+      const tokens = (user as any)?.[targetColumn] || [];
+
+      if (!tokens.includes(token)) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            [targetColumn]: {
+              push: token,
+            },
           },
-        },
-      });
+        });
+      }
 
       res.json({ success: true, message: 'Token registered' });
     } catch (error) {

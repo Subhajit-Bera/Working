@@ -224,7 +224,7 @@ async function sendPushNotificationToUser(
     // STALE JOB FALLBACK: If targetApp is not provided (e.g. jobs already in queue before deployment)
     if (!targetApp) {
        // Infer from payload context
-       if (payload.data?.type && (payload.data.type.includes('job') || payload.data.type === 'review_received')) {
+       if (payload.data?.type && (payload.data.type.includes('job') || payload.data.type === 'review_received' || payload.data.type === 'buddy-assignment')) {
            targetTokens = user.buddyDeviceTokens;
            targetApp = 'BUDDY_APP';
        } else {
