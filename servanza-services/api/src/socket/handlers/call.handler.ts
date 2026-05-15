@@ -38,58 +38,7 @@ const ICE_SERVERS = [
     : []),
 ];
 
-/**
- * Validate that the user can initiate/receive calls for this booking.
- */
-const validateCallAccess = async (userId: string, bookingId: string) => {
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    select: {
-      id: true,
-      userId: true,
-      status: true,
-      assignments: {
-        where: { status: 'ACCEPTED' },
-        select: {
-          buddyId: true,
-          buddy: {
-            select: {
-              user: { select: { id: true, name: true, profileImage: true } },
-            },
-          },
-        },
-        take: 1,
-      },
-      user: {
-        select: { id: true, name: true, profileImage: true },
-      },
-    },
-  });
-
-  if (!booking) return null;
-
-  const assignedBuddyId = booking.assignments[0]?.buddyId;
-  const isCustomer = booking.userId === userId;
-  const isBuddy = assignedBuddyId === userId;
-
-  if (!isCustomer && !isBuddy) return null;
-
-  // Calls only during active booking (not pending, not completed)
-  const callAllowed: BookingStatus[] = [
-    BookingStatus.ACCEPTED,
-    BookingStatus.ON_WAY,
-    BookingStatus.ARRIVED,
-    BookingStatus.IN_PROGRESS,
-  ];
-  if (!callAllowed.includes(booking.status)) return null;
-
-  return {
-    booking,
-    recipientId: isCustomer ? assignedBuddyId! : booking.userId,
-    callerInfo: isCustomer ? booking.user : booking.assignments[0]?.buddy?.user,
-    isCustomer,
-  };
-};
+import { validateCommunicationAccess } from '../../services/communication-access.service';
 
 export const handleCallEvents = (socket: Socket, io: Server): void => {
   const userId = socket.data.userId;
@@ -99,11 +48,22 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
     'call:initiate',
     async (data: { bookingId: string; offer: RTCSessionDescription }) => {
       try {
-        const access = await validateCallAccess(userId, data.bookingId);
+        const access = await validateCommunicationAccess(userId, data.bookingId);
         if (!access) {
           socket.emit('error', { code: 'CALL_ACCESS_DENIED', message: 'Cannot call for this booking' });
           return;
         }
+
+        // Clean up stale RINGING calls older than 35 seconds to prevent deadlock
+        const thirtyFiveSecondsAgo = new Date(Date.now() - 35000);
+        await prisma.callLog.updateMany({
+          where: {
+            bookingId: data.bookingId,
+            status: CallStatusEnum.RINGING,
+            createdAt: { lt: thirtyFiveSecondsAgo }
+          },
+          data: { status: CallStatusEnum.MISSED, endedAt: new Date() }
+        });
 
         // Check if there's already an active call for this booking
         const activeCall = await prisma.callLog.findFirst({

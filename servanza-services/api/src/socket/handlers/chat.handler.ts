@@ -3,68 +3,7 @@ import { prisma } from '../../config/database';
 import { logger } from '../../utils/logger';
 import { BookingStatus } from '@prisma/client';
 
-/**
- * Allowed booking statuses for chat access.
- * Chat is open from booking creation through 24h after completion.
- */
-const CHAT_ALLOWED_STATUSES: BookingStatus[] = [
-  BookingStatus.PENDING,
-  BookingStatus.QUEUED,
-  BookingStatus.ASSIGNED,
-  BookingStatus.ACCEPTED,
-  BookingStatus.ON_WAY,
-  BookingStatus.ARRIVED,
-  BookingStatus.IN_PROGRESS,
-  BookingStatus.COMPLETED,
-];
-
-const CHAT_POST_COMPLETION_HOURS = 24;
-
-/**
- * Validate that the user has access to chat for a given booking.
- * Returns the booking with the accepted buddy's userId, or null if unauthorized.
- */
-const validateChatAccess = async (userId: string, bookingId: string) => {
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    select: {
-      id: true,
-      userId: true,
-      status: true,
-      completedAt: true,
-      assignments: {
-        where: { status: 'ACCEPTED' },
-        select: { buddyId: true },
-        take: 1,
-      },
-    },
-  });
-
-  if (!booking) return null;
-
-  // Check if user is the customer or the assigned buddy
-  const assignedBuddyId = booking.assignments[0]?.buddyId;
-  const isCustomer = booking.userId === userId;
-  const isBuddy = assignedBuddyId === userId;
-
-  if (!isCustomer && !isBuddy) return null;
-
-  // Check booking status
-  if (!CHAT_ALLOWED_STATUSES.includes(booking.status)) return null;
-
-  // If completed, check 24h window
-  if (booking.status === BookingStatus.COMPLETED && booking.completedAt) {
-    const hoursSinceCompletion =
-      (Date.now() - new Date(booking.completedAt).getTime()) / (1000 * 60 * 60);
-    if (hoursSinceCompletion > CHAT_POST_COMPLETION_HOURS) return null;
-  }
-
-  return {
-    booking,
-    recipientId: isCustomer ? assignedBuddyId : booking.userId,
-    isCustomer,
-  };
-};
+import { validateCommunicationAccess } from '../../services/communication-access.service';
 
 export const handleChatEvents = (socket: Socket, io: Server): void => {
   const userId = socket.data.userId;
@@ -72,7 +11,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
   // ─── Join booking chat room ───────────────────────────────────────
   socket.on('chat:join', async (data: { bookingId: string }) => {
     try {
-      const access = await validateChatAccess(userId, data.bookingId);
+      const access = await validateCommunicationAccess(userId, data.bookingId);
       if (!access) {
         socket.emit('error', { code: 'CHAT_ACCESS_DENIED', message: 'Not authorized for this chat' });
         return;
@@ -97,7 +36,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
         return;
       }
 
-      const access = await validateChatAccess(userId, data.bookingId);
+      const access = await validateCommunicationAccess(userId, data.bookingId);
       if (!access) {
         socket.emit('error', { code: 'CHAT_ACCESS_DENIED', message: 'Chat not available' });
         return;
@@ -155,6 +94,9 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
   // ─── Mark messages as read ────────────────────────────────────────
   socket.on('chat:read', async (data: { bookingId: string }) => {
     try {
+      const access = await validateCommunicationAccess(userId, data.bookingId);
+      if (!access) return;
+
       // Mark all unread messages from the OTHER person as read
       const result = await prisma.chatMessage.updateMany({
         where: {
@@ -183,7 +125,10 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
   });
 
   // ─── Typing indicator (relay only, no persistence) ────────────────
-  socket.on('chat:typing', (data: { bookingId: string; isTyping: boolean }) => {
+  socket.on('chat:typing', async (data: { bookingId: string; isTyping: boolean }) => {
+    const access = await validateCommunicationAccess(userId, data.bookingId);
+    if (!access) return;
+
     socket.to(`chat:${data.bookingId}`).emit('chat:typing', {
       bookingId: data.bookingId,
       userId,

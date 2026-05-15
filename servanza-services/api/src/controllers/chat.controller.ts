@@ -3,44 +3,7 @@ import { prisma } from '../config/database';
 import { ApiError } from '../utils/errors';
 import { BookingStatus } from '@prisma/client';
 
-const CHAT_POST_COMPLETION_HOURS = 24;
-
-/**
- * Validate that the requesting user can access chat for a booking.
- */
-const ensureChatAccess = async (userId: string, bookingId: string) => {
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    select: {
-      userId: true,
-      status: true,
-      completedAt: true,
-      assignments: {
-        where: { status: 'ACCEPTED' },
-        select: { buddyId: true },
-        take: 1,
-      },
-    },
-  });
-
-  if (!booking) throw new ApiError(404, 'Booking not found');
-
-  const assignedBuddyId = booking.assignments[0]?.buddyId;
-  const isCustomer = booking.userId === userId;
-  const isBuddy = assignedBuddyId === userId;
-
-  if (!isCustomer && !isBuddy) throw new ApiError(403, 'Not authorized for this chat');
-
-  // If completed, check 24h window
-  if (booking.status === BookingStatus.COMPLETED && booking.completedAt) {
-    const hoursSince = (Date.now() - new Date(booking.completedAt).getTime()) / (1000 * 60 * 60);
-    if (hoursSince > CHAT_POST_COMPLETION_HOURS) {
-      throw new ApiError(403, 'Chat window has expired');
-    }
-  }
-
-  return { isCustomer, assignedBuddyId };
-};
+import { validateCommunicationAccess } from '../services/communication-access.service';
 
 export class ChatController {
   /**
@@ -54,7 +17,8 @@ export class ChatController {
       const { cursor, limit = '50' } = req.query;
       const take = Math.min(parseInt(limit as string) || 50, 100);
 
-      await ensureChatAccess(userId, bookingId);
+      const access = await validateCommunicationAccess(userId, bookingId);
+      if (!access) throw new ApiError(403, 'Chat access denied or window has expired');
 
       const messages = await prisma.chatMessage.findMany({
         where: { bookingId },
@@ -101,7 +65,8 @@ export class ChatController {
       const { bookingId } = req.params;
       const userId = (req as any).user?.id;
 
-      await ensureChatAccess(userId, bookingId);
+      const access = await validateCommunicationAccess(userId, bookingId);
+      if (!access) throw new ApiError(403, 'Chat access denied or window has expired');
 
       const count = await prisma.chatMessage.count({
         where: {
