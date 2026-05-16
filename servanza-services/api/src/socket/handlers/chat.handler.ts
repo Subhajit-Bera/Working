@@ -1,7 +1,7 @@
 import { Socket, Server } from 'socket.io';
 import { prisma } from '../../config/database';
 import { logger } from '../../utils/logger';
-import { BookingStatus } from '@prisma/client';
+
 
 import { validateCommunicationAccess } from '../../services/communication-access.service';
 
@@ -73,9 +73,9 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
 
       // Also emit directly to recipient in case they haven't joined the room
       // (e.g., they're on a different screen but should see a badge)
-      if (access.recipientId) {
+      if (access.recipientUserId) {
         const { emitToUser } = await import('..');
-        await emitToUser(access.recipientId, 'chat:new-message', {
+        await emitToUser(access.recipientUserId, 'chat:new-message', {
           bookingId: data.bookingId,
           messageId: message.id,
           senderName: message.sender.name,

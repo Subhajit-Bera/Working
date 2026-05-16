@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/errors';
-import { BookingStatus } from '@prisma/client';
+
 
 import { validateCommunicationAccess } from '../services/communication-access.service';
 

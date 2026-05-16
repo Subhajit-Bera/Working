@@ -1,7 +1,7 @@
 import { Socket, Server } from 'socket.io';
 import { prisma } from '../../config/database';
 import { logger } from '../../utils/logger';
-import { BookingStatus } from '@prisma/client';
+
 
 // ─── Server-side type aliases for WebRTC signaling payloads ─────────
 // These are opaque on the server — we just relay them between clients.
@@ -83,7 +83,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           data: {
             bookingId: data.bookingId,
             callerId: userId,
-            receiverId: access.recipientId,
+            receiverId: access.recipientUserId,
             type: 'VOICE',
             status: CallStatusEnum.RINGING,
           },
@@ -91,7 +91,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
 
         // Send call to recipient
         const { emitToUser } = await import('..');
-        await emitToUser(access.recipientId, 'call:incoming', {
+        await emitToUser(access.recipientUserId, 'call:incoming', {
           callId: callLog.id,
           bookingId: data.bookingId,
           caller: access.callerInfo,
@@ -115,7 +115,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
                 data: { status: CallStatusEnum.MISSED, endedAt: new Date() },
               });
               io.to(`user:${userId}`).emit('call:missed', { callId: callLog.id });
-              io.to(`user:${access.recipientId}`).emit('call:missed', { callId: callLog.id });
+              io.to(`user:${access.recipientUserId}`).emit('call:missed', { callId: callLog.id });
               logger.info(`[Call] Call ${callLog.id} missed (timeout)`);
             }
           } catch (e) {
@@ -123,7 +123,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           }
         }, 30000);
 
-        logger.info(`[Call] ${userId} calling ${access.recipientId} for booking ${data.bookingId}`);
+        logger.info(`[Call] ${userId} calling ${access.recipientUserId} for booking ${data.bookingId}`);
       } catch (error: any) {
         logger.error(`[Call] Error initiating call:`, error.message);
         socket.emit('error', { message: 'Failed to initiate call' });
