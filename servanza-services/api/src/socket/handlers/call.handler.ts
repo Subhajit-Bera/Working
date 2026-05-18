@@ -48,7 +48,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
     'call:initiate',
     async (data: { bookingId: string; offer: RTCSessionDescription }) => {
       try {
-        const access = await validateCommunicationAccess(userId, data.bookingId);
+        const access = await validateCommunicationAccess(userId, data.bookingId, { channel: 'call' });
         if (!access) {
           socket.emit('error', { code: 'CALL_ACCESS_DENIED', message: 'Cannot call for this booking' });
           return;

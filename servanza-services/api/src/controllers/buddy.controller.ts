@@ -4,6 +4,8 @@ import { GeoService } from '../services/geospatial.service';
 import { ApiError } from '../utils/errors';
 // import { removeUndefined } from '../utils/helpers';
 
+import { getCommunicationCapabilities } from '../services/communication-access.service';
+
 const buddyService = new BuddyService();
 const geoService = new GeoService();
 
@@ -121,6 +123,16 @@ export class BuddyController {
         page: Number(page),
         limit: Number(limit),
       });
+
+      // Attach communication capabilities
+      jobs.jobs = await Promise.all(
+        jobs.jobs.map(async (job: any) => {
+          if (job.bookingId) {
+            job.booking.communicationAccess = await getCommunicationCapabilities(buddyId, job.bookingId);
+          }
+          return job;
+        })
+      );
       res.json({
         success: true,
         data: jobs,
@@ -134,6 +146,9 @@ export class BuddyController {
     try {
       const buddyId = req.user!.id;
       const job = await buddyService.getActiveJob(buddyId);
+      if (job && job.bookingId) {
+        (job as any).booking.communicationAccess = await getCommunicationCapabilities(buddyId, job.bookingId);
+      }
       res.json({
         success: true,
         data: job,
@@ -151,6 +166,15 @@ export class BuddyController {
         page: Number(page),
         limit: Number(limit),
       });
+
+      history.history = await Promise.all(
+        history.history.map(async (job: any) => {
+          if (job.bookingId) {
+            job.booking.communicationAccess = await getCommunicationCapabilities(buddyId, job.bookingId);
+          }
+          return job;
+        })
+      );
       res.json({
         success: true,
         data: history,
@@ -195,6 +219,9 @@ export class BuddyController {
       const buddyId = req.user!.id;
       const { assignmentId } = req.params;
       const job = await buddyService.getJobDetails(buddyId, assignmentId);
+      if (job && job.bookingId) {
+        (job as any).booking.communicationAccess = await getCommunicationCapabilities(buddyId, job.bookingId);
+      }
       res.json({
         success: true,
         data: job,

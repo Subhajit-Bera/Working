@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 import { PaymentService } from './payment.service';
 import { BuddyService } from './buddy.service';
 import { OTPService } from './otp.service';
+import { getCommunicationCapabilities } from './communication-access.service';
 import { emitToUser } from '../utils/realtime';
 
 // const notificationService = new NotificationService();
@@ -221,7 +222,12 @@ export class BookingService {
     const { status, page = 1, limit = 10 } = filters;
 
     const where: any = { userId };
-    let assignmentStatusFilter: AssignmentStatus[] = [AssignmentStatus.ACCEPTED];
+    let assignmentStatusFilter: AssignmentStatus[] = [
+      AssignmentStatus.ACCEPTED,
+      AssignmentStatus.ON_WAY,
+      AssignmentStatus.ARRIVED,
+      AssignmentStatus.IN_PROGRESS
+    ];
 
     if (status) {
       // Status may come as string; keep it flexible
@@ -270,8 +276,15 @@ export class BookingService {
       prisma.booking.count({ where }),
     ]);
 
+    const bookingsWithCaps = await Promise.all(
+      bookings.map(async (booking) => {
+        (booking as any).communicationAccess = await getCommunicationCapabilities(userId, booking.id);
+        return booking;
+      })
+    );
+
     return {
-      bookings,
+      bookings: bookingsWithCaps,
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -300,7 +313,14 @@ export class BookingService {
         assignments: {
           where: {
             status: {
-              in: [AssignmentStatus.ACCEPTED, AssignmentStatus.COMPLETED, AssignmentStatus.CANCELLED],
+              in: [
+                AssignmentStatus.ACCEPTED,
+                AssignmentStatus.ON_WAY,
+                AssignmentStatus.ARRIVED,
+                AssignmentStatus.IN_PROGRESS,
+                AssignmentStatus.COMPLETED,
+                AssignmentStatus.CANCELLED
+              ],
             },
           },
           include: {
@@ -327,6 +347,8 @@ export class BookingService {
     if (!booking) {
       throw new ApiError(404, 'Booking not found');
     }
+
+    (booking as any).communicationAccess = await getCommunicationCapabilities(userId, booking.id);
 
     return booking;
   }

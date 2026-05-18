@@ -3,7 +3,7 @@ import { prisma } from '../config/database';
 import { ApiError } from '../utils/errors';
 
 
-import { validateCommunicationAccess } from '../services/communication-access.service';
+import { validateCommunicationAccess, getCommunicationCapabilities } from '../services/communication-access.service';
 
 export class ChatController {
   /**
@@ -17,7 +17,7 @@ export class ChatController {
       const { cursor, limit = '50' } = req.query;
       const take = Math.min(parseInt(limit as string) || 50, 100);
 
-      const access = await validateCommunicationAccess(userId, bookingId);
+      const access = await validateCommunicationAccess(userId, bookingId, { channel: 'chat' });
       if (!access) throw new ApiError(403, 'Chat access denied or window has expired');
 
       const messages = await prisma.chatMessage.findMany({
@@ -65,7 +65,7 @@ export class ChatController {
       const { bookingId } = req.params;
       const userId = (req as any).user?.id;
 
-      const access = await validateCommunicationAccess(userId, bookingId);
+      const access = await validateCommunicationAccess(userId, bookingId, { channel: 'chat' });
       if (!access) throw new ApiError(403, 'Chat access denied or window has expired');
 
       const count = await prisma.chatMessage.count({
@@ -80,5 +80,28 @@ export class ChatController {
     } catch (error) {
       next(error);
     }
-  }
+  };
+
+  /**
+   * Get communication capabilities (canChat, canCall, role)
+   */
+  getCommunicationCapabilities = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { bookingId } = req.params;
+      const userId = (req as any).user?.id;
+
+      if (!userId || !bookingId) {
+        throw new ApiError(400, 'User ID and Booking ID are required');
+      }
+
+      const caps = await getCommunicationCapabilities(userId, bookingId);
+
+      res.json({
+        success: true,
+        data: caps
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

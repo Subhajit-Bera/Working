@@ -11,7 +11,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
   // ─── Join booking chat room ───────────────────────────────────────
   socket.on('chat:join', async (data: { bookingId: string }) => {
     try {
-      const access = await validateCommunicationAccess(userId, data.bookingId);
+      const access = await validateCommunicationAccess(userId, data.bookingId, { channel: 'chat' });
       if (!access) {
         socket.emit('error', { code: 'CHAT_ACCESS_DENIED', message: 'Not authorized for this chat' });
         return;
@@ -36,7 +36,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
         return;
       }
 
-      const access = await validateCommunicationAccess(userId, data.bookingId);
+      const access = await validateCommunicationAccess(userId, data.bookingId, { channel: 'chat' });
       if (!access) {
         socket.emit('error', { code: 'CHAT_ACCESS_DENIED', message: 'Chat not available' });
         return;
@@ -82,6 +82,23 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
           content: message.content,
           createdAt: message.createdAt.toISOString(),
         });
+        
+        // Also send an FCM Push Notification
+        const { FCMService } = await import('../../services/fcm.service');
+        const fcmService = new FCMService();
+        
+        const targetApp = access.isBuddy ? 'CUSTOMER_APP' : 'BUDDY_APP';
+        await fcmService.sendToUser(access.recipientUserId, {
+          title: `New message from ${message.sender.name}`,
+          body: message.content,
+          data: {
+            type: 'chat-message',
+            bookingId: data.bookingId,
+            messageId: message.id,
+            customerName: message.sender.name,
+            content: message.content,
+          }
+        }, targetApp);
       }
 
       logger.debug(`[Chat] Message sent in booking ${data.bookingId} by ${userId}`);
@@ -94,7 +111,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
   // ─── Mark messages as read ────────────────────────────────────────
   socket.on('chat:read', async (data: { bookingId: string }) => {
     try {
-      const access = await validateCommunicationAccess(userId, data.bookingId);
+      const access = await validateCommunicationAccess(userId, data.bookingId, { channel: 'chat' });
       if (!access) return;
 
       // Mark all unread messages from the OTHER person as read
@@ -126,7 +143,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
 
   // ─── Typing indicator (relay only, no persistence) ────────────────
   socket.on('chat:typing', async (data: { bookingId: string; isTyping: boolean }) => {
-    const access = await validateCommunicationAccess(userId, data.bookingId);
+    const access = await validateCommunicationAccess(userId, data.bookingId, { channel: 'chat' });
     if (!access) return;
 
     socket.to(`chat:${data.bookingId}`).emit('chat:typing', {

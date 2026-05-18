@@ -14,4 +14,7 @@ router.get('/bookings/:bookingId/messages', chatController.getMessages);
 // Unread message count
 router.get('/bookings/:bookingId/messages/unread-count', chatController.getUnreadCount);
 
+// Get communication capabilities (canChat, canCall)
+router.get('/bookings/:bookingId/communication-access', chatController.getCommunicationCapabilities);
+
 export default router;
