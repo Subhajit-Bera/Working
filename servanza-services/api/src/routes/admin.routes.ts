@@ -108,6 +108,7 @@ router.get('/audit-logs', requirePermission('settings.view'), adminController.ge
 // ============================================
 router.get('/notifications', requireAdmin, adminController.getNotifications);
 router.patch('/notifications/:id/read', requireAdmin, adminController.markNotificationRead);
+router.post('/notifications/broadcast', requirePermission('users.view'), adminController.broadcastPushNotification);
 
 // ============================================
 // Manual QUEUED bookings activation (for testing/admin use)

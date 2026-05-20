@@ -72,4 +72,10 @@ router.get('/verification-status', authorize(UserRole.BUDDY), buddyController.ge
 // Training
 router.post('/training/select-date', authorize(UserRole.BUDDY), buddyController.selectTrainingStartDate);
 
+// Notifications
+router.get('/notifications', authorize(UserRole.BUDDY), buddyController.getNotifications);
+router.get('/notifications/unread-count', authorize(UserRole.BUDDY), buddyController.getUnreadNotificationCount);
+router.patch('/notifications/mark-all-read', authorize(UserRole.BUDDY), buddyController.markAllNotificationsRead);
+router.patch('/notifications/:id/read', authorize(UserRole.BUDDY), buddyController.markNotificationRead);
+
 export default router;

@@ -398,7 +398,7 @@ export class BookingService {
   /**
    * Cancel booking
    */
-  async cancelBooking(bookingId: string, userId: string) {
+  async cancelBooking(bookingId: string, userId: string, role?: string) {
     const booking = await prisma.booking.findFirst({
       where: {
         id: bookingId,
@@ -414,6 +414,26 @@ export class BookingService {
       throw new ApiError(400, 'Cannot cancel booking in current status');
     }
 
+    // === BACKEND TIME GUARD (skip for admins) ===
+    if (role !== 'ADMIN') {
+      const now = new Date();
+      if (booking.isImmediate) {
+        // Instant bookings: cancelable only within 5 minutes of creation
+        const diffMs = now.getTime() - new Date(booking.createdAt).getTime();
+        const diffMins = diffMs / (1000 * 60);
+        if (diffMins > 5) {
+          throw new ApiError(400, 'Instant bookings can only be cancelled within 5 minutes of creation.');
+        }
+      } else if (booking.scheduledStart) {
+        // Scheduled bookings: cancelable only if >= 30 minutes before start
+        const diffMs = new Date(booking.scheduledStart).getTime() - now.getTime();
+        const diffMins = diffMs / (1000 * 60);
+        if (diffMins < 30) {
+          throw new ApiError(400, 'Scheduled bookings can only be cancelled at least 30 minutes before the start time.');
+        }
+      }
+    }
+
     await prisma.booking.update({
       where: { id: bookingId },
       data: {
@@ -422,7 +442,7 @@ export class BookingService {
       },
     });
 
-    // Use enums for assignment status checks/updates
+    // Cancel active assignments
     await prisma.assignment.updateMany({
       where: {
         bookingId,
@@ -444,23 +464,27 @@ export class BookingService {
       if (transaction) {
         await paymentService.processRefund(transaction.id);
       }
-
-      // Notify buddy if assigned
-      const assignment = await prisma.assignment.findFirst({
-        where: {
-          bookingId,
-          status: { in: [AssignmentStatus.PENDING, AssignmentStatus.ACCEPTED] },
-        },
-      });
-
-      if (assignment) {
-        // eventBus.emit('notify:buddy:cancelled', { args: [assignment.buddyId, booking] });
-
-        console.log(`Notify buddy ${assignment.buddyId} about booking cancellation.`)
-      }
-
-      logger.info(`Booking cancelled: ${bookingId}`);
     }
+
+    // Notify buddy if assigned
+    const assignment = await prisma.assignment.findFirst({
+      where: {
+        bookingId,
+        status: AssignmentStatus.CANCELLED,
+      },
+      orderBy: { assignedAt: 'desc' },
+    });
+
+    if (assignment) {
+      const { default: eventBus } = await import('../utils/event-bus');
+      const bookingWithService = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { service: true },
+      });
+      eventBus.emit('notify:buddy:cancelled', { args: [assignment.buddyId, bookingWithService] });
+    }
+
+    logger.info(`Booking cancelled: ${bookingId}`);
   }
 
   /**
@@ -478,6 +502,27 @@ export class BookingService {
       throw new ApiError(404, 'Booking not found');
     }
 
+    if (([BookingStatus.COMPLETED, BookingStatus.CANCELLED] as BookingStatus[]).includes(booking.status)) {
+      throw new ApiError(400, 'Cannot cancel booking in current status');
+    }
+
+    // === BACKEND TIME GUARD ===
+    const now = new Date();
+    if (booking.isImmediate) {
+      const diffMs = now.getTime() - new Date(booking.createdAt).getTime();
+      const diffMins = diffMs / (1000 * 60);
+      if (diffMins > 5) {
+        throw new ApiError(400, 'Instant bookings can only be cancelled within 5 minutes of creation.');
+      }
+    } else if (booking.scheduledStart) {
+      const diffMs = new Date(booking.scheduledStart).getTime() - now.getTime();
+      const diffMins = diffMs / (1000 * 60);
+      if (diffMins < 30) {
+        throw new ApiError(400, 'Scheduled bookings can only be cancelled at least 30 minutes before the start time.');
+      }
+    }
+
+    // Perform all cancellation logic inline (not calling cancelBooking to avoid double-status bug)
     await prisma.booking.update({
       where: { id: bookingId },
       data: {
@@ -487,7 +532,49 @@ export class BookingService {
       },
     });
 
-    await this.cancelBooking(bookingId, userId);
+    // Cancel active assignments
+    await prisma.assignment.updateMany({
+      where: {
+        bookingId,
+        status: { in: [AssignmentStatus.PENDING, AssignmentStatus.ACCEPTED] },
+      },
+      data: {
+        status: AssignmentStatus.CANCELLED,
+        cancelledAt: new Date(),
+      },
+    });
+
+    // Process refund if prepaid and already paid
+    if (booking.paymentMethod === PaymentMethod.PREPAID && booking.paymentStatus === PaymentStatus.COMPLETED) {
+      const transaction = await prisma.transaction.findFirst({
+        where: { bookingId, status: PaymentStatus.COMPLETED },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (transaction) {
+        await paymentService.processRefund(transaction.id);
+      }
+    }
+
+    // Notify buddy if there was an active assignment
+    const assignment = await prisma.assignment.findFirst({
+      where: {
+        bookingId,
+        status: AssignmentStatus.CANCELLED,
+      },
+      orderBy: { assignedAt: 'desc' },
+    });
+
+    if (assignment) {
+      const { default: eventBus } = await import('../utils/event-bus');
+      const bookingWithService = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { service: true },
+      });
+      eventBus.emit('notify:buddy:cancelled', { args: [assignment.buddyId, bookingWithService] });
+    }
+
+    logger.info(`Booking cancelled with reason: ${bookingId} - ${reason}`);
   }
 
   /**

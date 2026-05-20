@@ -421,13 +421,15 @@ model Notification {
   data      Json?            // Additional data
   isRead    Boolean          @default(false)
   readAt    DateTime?
-  bookingId String?
-  createdAt DateTime         @default(now())
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  booking   Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  bookingId      String?
+  recipientType  String           @default("USER")  // "USER" or "BUDDY"
+  createdAt      DateTime         @default(now())
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking        Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+  @@index([recipientType])
   @@map("notifications")
 }
 
@@ -459,6 +461,7 @@ model Review {
   rating      Int?     // 1-5, optional to allow comment-only reviews
   comment     String?
   reply       String?  // Admin/buddy reply
+  isHidden    Boolean  @default(false)  // Soft-delete for admin moderation
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)

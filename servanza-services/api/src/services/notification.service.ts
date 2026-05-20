@@ -5,6 +5,7 @@ import { emitToUser, emitToBuddy, emitToAdmins } from '../utils/realtime';
 import { addNotificationJob } from '../queues/notification.queue';
 import eventBus from '../utils/event-bus';
 import { FCMService, FCMNotificationPayload } from './fcm.service';
+import { ApiError } from '../utils/errors';
 
 const fcmService = new FCMService();
 
@@ -32,6 +33,7 @@ export class NotificationService {
           body,
           data,
           bookingId,
+          recipientType: targetApp === 'BUDDY_APP' ? 'BUDDY' : 'USER',
         },
       });
 
@@ -81,6 +83,7 @@ export class NotificationService {
         title,
         body,
         data,
+        recipientType: targetApp === 'BUDDY_APP' ? 'BUDDY' : 'USER',
       }));
 
       await prisma.notification.createMany({
@@ -179,7 +182,7 @@ export class NotificationService {
       body,
       imageUrl: booking.service.imageUrl,
       data: {
-        type: 'job_assigned',
+        type: 'buddy-assignment',
         bookingId: booking.id,
         assignmentId: assignmentDetails?.assignmentId || booking.id,
         serviceTitle: booking.service.title,
@@ -193,7 +196,7 @@ export class NotificationService {
       badge: 1,
     }, 'BUDDY_APP');
 
-    emitToBuddy(buddyId, 'job:assigned', { booking, assignmentId: assignmentDetails?.assignmentId });
+    emitToBuddy(buddyId, 'buddy-assignment', { booking, assignmentId: assignmentDetails?.assignmentId });
     emitToAdmins('admin:feed', {
       type: 'BOOKING_ASSIGNED',
       title: 'Job Assigned',
@@ -369,13 +372,13 @@ export class NotificationService {
       title,
       body,
       data: {
-        type: 'job_cancelled',
+        type: 'booking-cancelled',
         bookingId: booking.id,
       },
       clickAction: `/jobs/${booking.id}`,
     }, 'BUDDY_APP');
 
-    emitToBuddy(buddyId, 'job:cancelled', { bookingId: booking.id });
+    emitToBuddy(buddyId, 'booking-cancelled', { bookingId: booking.id });
   }
 
   /**
@@ -496,6 +499,79 @@ export class NotificationService {
       clickAction: `/bookings/${booking.id}`,
       sound: 'default', // You can use a specific sound like 'doorbell' if configured in app
     }, 'CUSTOMER_APP');
+  }
+
+  // ============================================
+  // Buddy Notification Fetching (Inbox)
+  // ============================================
+
+  async getBuddyNotifications(buddyId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+
+    const [notifications, total] = await Promise.all([
+      prisma.notification.findMany({
+        where: {
+          userId: buddyId,
+          recipientType: 'BUDDY',
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.notification.count({
+        where: {
+          userId: buddyId,
+          recipientType: 'BUDDY',
+        },
+      }),
+    ]);
+
+    const unreadCount = await prisma.notification.count({
+      where: {
+        userId: buddyId,
+        recipientType: 'BUDDY',
+        isRead: false,
+      },
+    });
+
+    return {
+      notifications,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        unreadCount,
+      },
+    };
+  }
+
+  async markAsRead(id: string, buddyId: string) {
+    const notification = await prisma.notification.findFirst({
+      where: { id, userId: buddyId, recipientType: 'BUDDY' },
+    });
+
+    if (!notification) {
+      throw new ApiError(404, 'Notification not found');
+    }
+
+    return prisma.notification.update({
+      where: { id },
+      data: { isRead: true, readAt: new Date() },
+    });
+  }
+
+  async markAllAsRead(buddyId: string) {
+    return prisma.notification.updateMany({
+      where: { userId: buddyId, recipientType: 'BUDDY', isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+  }
+
+  async getUnreadCount(buddyId: string) {
+    return prisma.notification.count({
+      where: { userId: buddyId, recipientType: 'BUDDY', isRead: false },
+    });
   }
 }
 

@@ -5,9 +5,11 @@ import { ApiError } from '../utils/errors';
 // import { removeUndefined } from '../utils/helpers';
 
 import { getCommunicationCapabilities } from '../services/communication-access.service';
+import { NotificationService } from '../services/notification.service';
 
 const buddyService = new BuddyService();
 const geoService = new GeoService();
+const notificationService = new NotificationService();
 
 export class BuddyController {
   async getProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -393,6 +395,64 @@ export class BuddyController {
       res.json({
         success: true,
         data: status,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // Notifications
+  // ============================================
+
+  async getNotifications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const buddyId = req.user!.id;
+      const { page = 1, limit = 20 } = req.query;
+      const notifications = await notificationService.getBuddyNotifications(buddyId, Number(page), Number(limit));
+      res.json({
+        success: true,
+        data: notifications,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getUnreadNotificationCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const buddyId = req.user!.id;
+      const count = await notificationService.getUnreadCount(buddyId);
+      res.json({
+        success: true,
+        data: { unreadCount: count },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async markNotificationRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const buddyId = req.user!.id;
+      const { id } = req.params;
+      await notificationService.markAsRead(id, buddyId);
+      res.json({
+        success: true,
+        message: 'Notification marked as read',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async markAllNotificationsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const buddyId = req.user!.id;
+      await notificationService.markAllAsRead(buddyId);
+      res.json({
+        success: true,
+        message: 'All notifications marked as read',
       });
     } catch (error) {
       next(error);

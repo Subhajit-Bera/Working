@@ -86,9 +86,10 @@ router.post('/fcm/remove', authenticate, validateRequest(fcmTokenSchema), authCo
 // Token refresh
 router.post('/refresh-token', validateRequest(refreshTokenSchema), authController.refreshToken);
 
-// Password reset
+// Password management
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
+router.post('/change-password', authenticate, authController.changePassword);
 
 // Email verification
 router.post('/verify-email', authController.verifyEmail);

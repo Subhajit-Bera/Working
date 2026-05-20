@@ -1214,7 +1214,7 @@ export class AdminService {
   }
 
   /**
-   * Delete a review (moderation)
+   * Hide/unhide a review (soft-delete moderation)
    */
   async deleteReview(reviewId: string, reason?: string) {
     const review = await prisma.review.findUnique({
@@ -1228,29 +1228,45 @@ export class AdminService {
       throw new ApiError(404, 'Review not found');
     }
 
-    // Delete the review
-    await prisma.review.delete({
+    // Toggle isHidden (soft-delete)
+    const newHiddenState = !review.isHidden;
+    await prisma.review.update({
       where: { id: reviewId },
+      data: { isHidden: newHiddenState },
     });
 
-    // Recalculate buddy's average rating
-    const remainingReviews = await prisma.review.aggregate({
-      where: { buddyId: review.buddyId },
+    // Recalculate buddy's average rating (excluding hidden reviews)
+    const buddyReviewStats = await prisma.review.aggregate({
+      where: { buddyId: review.buddyId, isHidden: false },
       _avg: { rating: true },
       _count: { rating: true },
     });
 
-    // Update buddy's rating
     await prisma.buddy.update({
       where: { id: review.buddyId },
       data: {
-        rating: remainingReviews._avg.rating || 0,
+        rating: buddyReviewStats._avg.rating || 0,
       },
     });
 
-    logger.info(`Review ${reviewId} deleted. Reason: ${reason || 'Not specified'}`);
+    // Recalculate service's average rating and total reviews (excluding hidden reviews)
+    const serviceReviewStats = await prisma.review.aggregate({
+      where: { serviceId: review.serviceId, isHidden: false },
+      _avg: { rating: true },
+      _count: { id: true },
+    });
 
-    return { success: true, message: 'Review deleted successfully' };
+    await prisma.service.update({
+      where: { id: review.serviceId },
+      data: {
+        averageRating: serviceReviewStats._avg.rating || 0,
+        totalReviews: serviceReviewStats._count.id || 0,
+      },
+    });
+
+    logger.info(`Review ${reviewId} ${newHiddenState ? 'hidden' : 'unhidden'}. Reason: ${reason || 'Not specified'}`);
+
+    return { success: true, message: `Review ${newHiddenState ? 'hidden' : 'unhidden'} successfully`, isHidden: newHiddenState };
   }
 
   // ========================

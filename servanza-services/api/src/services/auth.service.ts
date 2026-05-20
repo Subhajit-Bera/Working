@@ -1013,6 +1013,51 @@ export class AuthService {
   }
 
   /**
+   * Change password (authenticated user)
+   */
+  async changePassword(userId: string, currentPassword?: string, newPassword?: string): Promise<void> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new ApiError(404, 'User not found');
+      }
+
+      if (!newPassword) {
+        throw new ApiError(400, 'New password is required');
+      }
+
+      // If user has a password set, they must provide current password
+      if (user.passwordHash) {
+        if (!currentPassword) {
+          throw new ApiError(400, 'Current password is required');
+        }
+
+        const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!isPasswordValid) {
+          throw new ApiError(401, 'Invalid current password');
+        }
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+        },
+      });
+
+      logger.info(`Password changed successfully for user ${userId}`);
+    } catch (error) {
+      logger.error('Change password error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Verify email
    */
   async verifyEmail(token: string): Promise<void> {

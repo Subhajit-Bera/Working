@@ -677,6 +677,21 @@ export class BuddyService {
         );
       }
 
+      // === 3-HOUR TIME GUARD ===
+      // Buddy cannot reject a job if it's less than 3 hours before the scheduled start
+      if (assignment.booking.scheduledStart) {
+        const now = new Date();
+        const scheduledStart = new Date(assignment.booking.scheduledStart);
+        const diffMs = scheduledStart.getTime() - now.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+        if (diffHours < 3) {
+          throw new ApiError(
+            400,
+            'You cannot reject a job less than 3 hours before the scheduled start time.'
+          );
+        }
+      }
+
       logger.info(`Buddy ${buddyId} has ${rejectionsThisWeek}/${MAX_REJECTIONS_PER_WEEK} rejections this week`);
 
       // Update assignment

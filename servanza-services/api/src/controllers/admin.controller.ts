@@ -2,12 +2,15 @@ import { Request, Response, NextFunction } from 'express'; // Use standard Reque
 import { AdminService } from '../services/admin.service';
 import { AssignmentService } from '../services/assignment.service';
 import { PaymentService } from '../services/payment.service';
+import { NotificationService } from '../services/notification.service';
 import { ApiError } from '../utils/errors';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, UserRole } from '@prisma/client';
+import { prisma } from '../config/database'; // Added prisma
 
 const adminService = new AdminService();
 const assignmentService = new AssignmentService();
 const paymentService = new PaymentService();
+const notificationService = new NotificationService();
 
 export class AdminController {
   async getDashboard(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -558,6 +561,65 @@ export class AdminController {
       const { id } = req.params;
       const result = await adminService.markNotificationRead(id);
       res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async broadcastPushNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { title, body, imageUrl, targetSegment, userIds } = req.body;
+      
+      if (!title || !body || !targetSegment) {
+        throw new ApiError(400, 'Title, body, and targetSegment are required');
+      }
+
+      let targetUserIds: string[] = [];
+
+      switch (targetSegment) {
+        case 'ALL_USERS':
+          const allUsers = await prisma.user.findMany({
+            where: { isActive: true, role: UserRole.USER },
+            select: { id: true },
+          });
+          targetUserIds = allUsers.map(u => u.id);
+          break;
+        
+        case 'ALL_BUDDIES':
+          const allBuddies = await prisma.user.findMany({
+            where: { isActive: true, role: UserRole.BUDDY },
+            select: { id: true },
+          });
+          targetUserIds = allBuddies.map(u => u.id);
+          break;
+
+        case 'SPECIFIC_USERS':
+          if (!Array.isArray(userIds) || userIds.length === 0) {
+            throw new ApiError(400, 'userIds array is required for SPECIFIC_USERS segment');
+          }
+          targetUserIds = userIds;
+          break;
+          
+        default:
+          throw new ApiError(400, 'Invalid targetSegment');
+      }
+
+      if (targetUserIds.length > 0) {
+        await notificationService.sendBatchNotification(
+          targetUserIds,
+          'GENERAL',
+          title,
+          body,
+          { imageUrl, targetSegment },
+          targetSegment === 'ALL_BUDDIES' ? 'BUDDY_APP' : 'CUSTOMER_APP'
+        );
+      }
+
+      res.json({ 
+        success: true, 
+        message: 'Broadcast notification sent successfully',
+        data: { usersReached: targetUserIds.length }
+      });
     } catch (error) {
       next(error);
     }

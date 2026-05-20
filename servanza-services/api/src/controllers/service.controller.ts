@@ -74,11 +74,21 @@ export class ServiceController {
   async deleteCategory(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      // Check if services are attached first
-      await prisma.category.delete({
+      
+      const category = await prisma.category.findUnique({ where: { id } });
+      if (!category) {
+        res.status(404).json({ success: false, message: 'Category not found' });
+        return;
+      }
+
+      // Soft delete: toggle isActive instead of hard delete
+      const newActiveState = !category.isActive;
+      await prisma.category.update({
         where: { id },
+        data: { isActive: newActiveState },
       });
-      res.json({ success: true, message: 'Category deleted' });
+      
+      res.json({ success: true, message: `Category ${newActiveState ? 'activated' : 'deactivated'}`, isActive: newActiveState });
     } catch (error) {
       next(error);
     }
@@ -274,6 +284,7 @@ export class ServiceController {
         prisma.review.findMany({
           where: {
             booking: { serviceId: id },
+            isHidden: false,
           },
           include: {
             user: {
@@ -287,6 +298,7 @@ export class ServiceController {
         prisma.review.count({
           where: {
             booking: { serviceId: id },
+            isHidden: false,
           },
         }),
       ]);
