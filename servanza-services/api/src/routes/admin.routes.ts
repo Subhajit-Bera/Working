@@ -185,5 +185,21 @@ router.get('/permissions/me', (req: Request, res: Response) => {
     });
 });
 
+// ============================================
+// Promotions Management
+// ============================================
+router.get('/promotions', requireAdmin, adminController.getPromotions);
+
+// ============================================
+// Payouts Management
+// ============================================
+router.get('/payouts', requireAdmin, adminController.getPayouts);
+router.post('/payouts', requireAdmin, adminController.createPayout);
+
+// ============================================
+// Broadcast Notifications
+// ============================================
+router.post('/notifications/broadcast', requireAdmin, adminController.broadcastNotification);
+
 export default router;
 

@@ -777,11 +777,13 @@ export class AdminService {
    * Delete service
    */
   async deleteService(serviceId: string) {
-    await prisma.service.delete({
+    // Service model only has isActive, not isHidden
+    await prisma.service.update({
       where: { id: serviceId },
+      data: { isActive: false },
     });
 
-    logger.info(`Service deleted: ${serviceId}`);
+    logger.info(`Service soft-deleted: ${serviceId}`);
   }
 
   /**
@@ -1113,6 +1115,7 @@ export class AdminService {
       limit = 20,
       rating,
       buddyId,
+      status,
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = filters;
@@ -1125,6 +1128,12 @@ export class AdminService {
 
     if (buddyId) {
       where.buddyId = buddyId;
+    }
+
+    if (status === 'hidden') {
+      where.isHidden = true;
+    } else if (status === 'published') {
+      where.isHidden = false;
     }
 
     const [reviews, total] = await Promise.all([
@@ -1350,7 +1359,7 @@ export class AdminService {
     // Daily revenue - DATE_TRUNC interval is a SQL literal, can't be parameterized.
     // Validated against whitelist to prevent injection.
     const validGroupBy = ['day', 'week', 'month'].includes(groupBy) ? groupBy : 'day';
-    const groupByLiteral = Prisma.raw(validGroupBy);
+    const groupByLiteral = Prisma.raw(`'${validGroupBy}'`);
 
     const revenueByPeriod = await prisma.$queryRaw<Array<{ date: Date; revenue: number; count: number }>>(
       Prisma.sql`SELECT 
@@ -2211,11 +2220,167 @@ export class AdminService {
     await this.loadPermissionsIntoCache();
 
     logger.info(`Role permissions reset to defaults: ${role} by admin ${adminUserId}`);
+    return { success: true };
+  }
 
-    return {
-      role,
-      permissions: defaultPerms,
-      resetBy: adminUserId,
-    };
+  // ============================================
+  // Promotions
+  // ============================================
+
+  async getPromotions() {
+    return prisma.promotion.findMany({
+      orderBy: { displayOrder: 'asc' },
+    });
+  }
+
+  // ============================================
+  // Buddy Payouts
+  // ============================================
+
+  async getPayouts(buddyId?: string) {
+    const where = buddyId ? { id: buddyId } : {};
+    
+    // Fetch all buddies with user info
+    const buddies = await prisma.buddy.findMany({
+      where,
+      select: {
+        id: true,
+        totalEarnings: true,
+        totalJobs: true,
+        rating: true,
+        documentsJson: true,
+      },
+    });
+
+    // Get user info separately since buddy.id === user.id
+    const payouts = await Promise.all(buddies.map(async (buddy) => {
+      const user = await prisma.user.findUnique({
+        where: { id: buddy.id },
+        select: { name: true, phone: true, email: true }
+      });
+
+      // Get sum of all PAYOUT transactions for this buddy
+      // We track payouts via Transaction.metadata.type === 'PAYOUT' and Transaction.userId === buddy.id
+      const payoutTransactions = await prisma.transaction.aggregate({
+        where: {
+          userId: buddy.id,
+          metadata: {
+            path: ['type'],
+            equals: 'PAYOUT'
+          },
+          status: 'COMPLETED'
+        },
+        _sum: {
+          amount: true
+        }
+      });
+
+      const totalPaid = payoutTransactions._sum?.amount || 0;
+      // Formula: Total lifetime earnings - Total lifetime paid
+      const pendingAmount = buddy.totalEarnings - totalPaid;
+
+      // Extract bank details from documentsJson if present
+      const docs = buddy.documentsJson as any;
+      const bankDetails = docs?.bankDetails || null;
+
+      return {
+        buddyId: buddy.id,
+        name: user?.name || 'Unknown',
+        phone: user?.phone || '',
+        totalEarnings: buddy.totalEarnings,
+        totalJobs: buddy.totalJobs,
+        totalPaid,
+        pendingAmount: pendingAmount > 0 ? pendingAmount : 0,
+        bankDetails,
+      };
+    }));
+
+    return payouts;
+  }
+
+  async createPayout(buddyId: string, amount: number, reference?: string) {
+    if (!amount || amount <= 0) {
+      throw new ApiError(400, 'Invalid payout amount');
+    }
+
+    const buddy = await prisma.buddy.findUnique({
+      where: { id: buddyId },
+    });
+
+    if (!buddy) {
+      throw new ApiError(404, 'Buddy not found');
+    }
+
+    // We need a bookingId for Transaction (required field). 
+    // For payouts, we find any completed booking for this buddy to link against,
+    // and store payout metadata in the transaction's metadata field.
+    const latestAssignment = await prisma.assignment.findFirst({
+      where: { buddyId, status: 'COMPLETED' },
+      orderBy: { completedAt: 'desc' },
+      select: { bookingId: true },
+    });
+
+    if (!latestAssignment) {
+      throw new ApiError(400, 'No completed bookings found for this buddy. Cannot create payout.');
+    }
+
+    // Create a transaction record for the payout
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId: buddyId,
+        bookingId: latestAssignment.bookingId,
+        amount,
+        method: 'CASH',
+        status: 'COMPLETED',
+        currency: 'INR',
+        metadata: {
+          type: 'PAYOUT',
+          reference: reference || null,
+          buddyId,
+          processedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    return transaction;
+  }
+
+  // ============================================
+  // Notifications
+  // ============================================
+
+  async broadcastNotification(data: { title: string; body: string; imageUrl?: string; targetSegment: string; userIds?: string[] }) {
+    const { NotificationService } = await import('./notification.service');
+    const notificationService = new NotificationService();
+    
+    let targetUserIds: string[] = [];
+
+    if (data.targetSegment === 'SPECIFIC_USERS' && data.userIds && data.userIds.length > 0) {
+      targetUserIds = data.userIds;
+    } else if (data.targetSegment === 'ALL_USERS') {
+      const users = await prisma.user.findMany({ where: { role: 'USER', isActive: true }, select: { id: true } });
+      targetUserIds = users.map(u => u.id);
+    } else if (data.targetSegment === 'ALL_BUDDIES') {
+      const buddies = await prisma.user.findMany({ where: { role: 'BUDDY', isActive: true }, select: { id: true } });
+      targetUserIds = buddies.map(b => b.id);
+    }
+
+    if (targetUserIds.length === 0) {
+      throw new ApiError(400, 'No target users found for broadcast');
+    }
+
+    const targetApp = data.targetSegment === 'ALL_BUDDIES' ? 'BUDDY_APP' : 'CUSTOMER_APP';
+
+    await notificationService.sendBatchNotification(
+      targetUserIds,
+      'GENERAL' as any,
+      data.title,
+      data.body,
+      { type: 'admin_broadcast' },
+      data.imageUrl,
+      targetApp
+    );
+
+    return { success: true, count: targetUserIds.length };
   }
 }

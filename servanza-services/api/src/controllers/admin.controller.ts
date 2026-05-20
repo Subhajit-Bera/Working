@@ -440,12 +440,13 @@ export class AdminController {
 
   async getReviews(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { page = 1, limit = 20, buddyId, rating } = req.query;
+      const { page = 1, limit = 20, buddyId, rating, status } = req.query;
       const reviews = await adminService.getReviews({
         page: Number(page),
         limit: Number(limit),
         buddyId: buddyId as string,
-        minRating: rating ? Number(rating) : undefined,
+        rating: rating ? Number(rating) : undefined,
+        status: status as string,
       });
       res.json({ success: true, data: reviews });
     } catch (error) {
@@ -679,6 +680,58 @@ export class AdminController {
     try {
       const result = await adminService.initializeDefaultPermissions();
       res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // Promotions
+  // ============================================
+
+  async getPromotions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Just fetch all promotions including inactive ones
+      const promotions = await adminService.getPromotions();
+      res.json({ success: true, data: promotions });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // Payouts
+  // ============================================
+
+  async getPayouts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { buddyId } = req.query;
+      const payouts = await adminService.getPayouts(buddyId as string);
+      res.json({ success: true, data: payouts });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createPayout(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { buddyId, amount, reference } = req.body;
+      const payout = await adminService.createPayout(buddyId, amount, reference);
+      res.json({ success: true, data: payout, message: 'Payout created successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // Broadcast Notification
+  // ============================================
+  
+  async broadcastNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { title, body, imageUrl, targetSegment, userIds } = req.body;
+      await adminService.broadcastNotification({ title, body, imageUrl, targetSegment, userIds });
+      res.json({ success: true, message: 'Broadcast notification sent successfully' });
     } catch (error) {
       next(error);
     }

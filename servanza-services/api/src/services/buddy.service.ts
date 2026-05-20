@@ -1118,14 +1118,32 @@ export class BuddyService {
     const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [todayEarnings, weekEarnings, monthEarnings] = await Promise.all([
+    const [todayEarnings, weekEarnings, monthEarnings, payoutTransactions] = await Promise.all([
       this.getEarningsForPeriod(buddyId, startOfToday),
       this.getEarningsForPeriod(buddyId, startOfWeek),
       this.getEarningsForPeriod(buddyId, startOfMonth),
+      prisma.transaction.aggregate({
+        where: {
+          userId: buddyId,
+          metadata: {
+            path: ['type'],
+            equals: 'PAYOUT'
+          },
+          status: 'COMPLETED'
+        },
+        _sum: {
+          amount: true
+        }
+      })
     ]);
+
+    const totalPaid = payoutTransactions._sum?.amount || 0;
+    const pendingAmount = buddy.totalEarnings - totalPaid;
 
     return {
       totalEarnings: buddy.totalEarnings,
+      totalPaid,
+      pendingAmount: pendingAmount > 0 ? pendingAmount : 0,
       totalJobs: buddy.totalJobs,
       today: todayEarnings,
       thisWeek: weekEarnings,

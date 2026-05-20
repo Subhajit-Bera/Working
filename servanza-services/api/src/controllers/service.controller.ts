@@ -347,10 +347,21 @@ export class ServiceController {
   async deleteService(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
-      await prisma.service.delete({
+      
+      const service = await prisma.service.findUnique({ where: { id } });
+      if (!service) {
+        res.status(404).json({ success: false, message: 'Service not found' });
+        return;
+      }
+
+      // Soft delete: toggle isActive
+      const newActiveState = !service.isActive;
+      await prisma.service.update({
         where: { id },
+        data: { isActive: newActiveState },
       });
-      res.json({ success: true, message: 'Service deleted' });
+      
+      res.json({ success: true, message: `Service ${newActiveState ? 'activated' : 'deactivated'}`, isActive: newActiveState });
     } catch (error) {
       next(error);
     }

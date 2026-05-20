@@ -404,4 +404,15 @@ export class AuthController {
       });
     }
   };
+
+  async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.json({
+        success: true,
+        message: 'Logged out successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
