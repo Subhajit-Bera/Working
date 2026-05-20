@@ -12,10 +12,14 @@ export class ReviewController {
       const userId = (req as any).user.id;
       const { bookingId, rating, comment } = req.body;
 
-      if (!bookingId || !rating) {
-        throw new ApiError(400, 'bookingId and rating are required');
+      if (!bookingId) {
+        throw new ApiError(400, 'bookingId is required');
       }
-      if (rating < 1 || rating > 5) {
+      // At least one of rating or comment must be provided
+      if (rating === undefined && (!comment || !comment.trim())) {
+        throw new ApiError(400, 'Either a rating or a comment is required');
+      }
+      if (rating !== undefined && (rating < 1 || rating > 5)) {
         throw new ApiError(400, 'Rating must be between 1 and 5');
       }
 
@@ -50,7 +54,7 @@ export class ReviewController {
           userId,
           serviceId: booking.serviceId,
           buddyId,
-          rating,
+          rating: rating ?? null,
           comment: comment?.trim() || null,
         },
         include: {
@@ -60,17 +64,21 @@ export class ReviewController {
       });
 
       // Update booking's service averageRating and totalReviews
+      // Only include reviews with a rating in the average calculation
       const aggr = await prisma.review.aggregate({
-        where: { serviceId: booking.serviceId },
+        where: { serviceId: booking.serviceId, rating: { not: null } },
         _avg: { rating: true },
         _count: { id: true },
+      });
+      const totalReviews = await prisma.review.count({
+        where: { serviceId: booking.serviceId },
       });
 
       await prisma.service.update({
         where: { id: booking.serviceId },
         data: {
-          averageRating: Math.round((aggr._avg.rating || 0) * 10) / 10,
-          totalReviews: aggr._count.id,
+          averageRating: Math.round((aggr._avg?.rating ?? 0) * 10) / 10,
+          totalReviews,
         },
       });
 
@@ -93,7 +101,7 @@ export class ReviewController {
       const review = await prisma.review.findFirst({ where: { id, userId } });
       if (!review) throw new ApiError(404, 'Review not found');
 
-      if (rating !== undefined && (rating < 1 || rating > 5)) {
+      if (rating !== undefined && rating !== null && (rating < 1 || rating > 5)) {
         throw new ApiError(400, 'Rating must be between 1 and 5');
       }
 
@@ -105,18 +113,21 @@ export class ReviewController {
         },
       });
 
-      // Recalculate service averageRating
+      // Recalculate service averageRating (only reviews with a rating)
       const aggr = await prisma.review.aggregate({
-        where: { serviceId: review.serviceId },
+        where: { serviceId: review.serviceId, rating: { not: null } },
         _avg: { rating: true },
         _count: { id: true },
+      });
+      const totalReviews = await prisma.review.count({
+        where: { serviceId: review.serviceId },
       });
 
       await prisma.service.update({
         where: { id: review.serviceId },
         data: {
-          averageRating: Math.round((aggr._avg.rating || 0) * 10) / 10,
-          totalReviews: aggr._count.id,
+          averageRating: Math.round((aggr._avg?.rating ?? 0) * 10) / 10,
+          totalReviews,
         },
       });
 

@@ -652,7 +652,7 @@ export class BookingService {
   /**
    * Add review
    */
-  async addReview(bookingId: string, userId: string, reviewData: { rating: number; comment?: string }) {
+  async addReview(bookingId: string, userId: string, reviewData: { rating?: number; comment?: string }) {
     const booking = await prisma.booking.findFirst({
       where: {
         id: bookingId,
@@ -678,6 +678,11 @@ export class BookingService {
       throw new ApiError(400, 'No completed assignment found');
     }
 
+    // At least one of rating or comment must be provided
+    if (reviewData.rating === undefined && (!reviewData.comment || !reviewData.comment.trim())) {
+      throw new ApiError(400, 'Either a rating or a comment is required');
+    }
+
     // Upsert: create or update the review
     const existingReview = await prisma.review.findUnique({
       where: { bookingId },
@@ -691,21 +696,37 @@ export class BookingService {
       review = await prisma.review.update({
         where: { id: existingReview.id },
         data: {
-          rating: reviewData.rating,
-          comment: reviewData.comment,
+          ...(reviewData.rating !== undefined ? { rating: reviewData.rating } : {}),
+          ...(reviewData.comment !== undefined ? { comment: reviewData.comment } : {}),
         },
       });
 
-      // Adjust buddy rating (remove old, add new)
-      const buddy = await prisma.buddy.findUnique({
-        where: { id: assignment.buddyId },
-      });
-      if (buddy && buddy.totalRatings > 0) {
-        const newRating = (buddy.rating * buddy.totalRatings - oldRating + reviewData.rating) / buddy.totalRatings;
-        await prisma.buddy.update({
+      // Adjust buddy rating only if rating values changed
+      const newRating = reviewData.rating ?? oldRating;
+      if (newRating !== null && oldRating !== null && newRating !== oldRating) {
+        const buddy = await prisma.buddy.findUnique({
           where: { id: assignment.buddyId },
-          data: { rating: newRating },
         });
+        if (buddy && buddy.totalRatings > 0) {
+          const adjustedRating = (buddy.rating * buddy.totalRatings - oldRating + newRating) / buddy.totalRatings;
+          await prisma.buddy.update({
+            where: { id: assignment.buddyId },
+            data: { rating: adjustedRating },
+          });
+        }
+      } else if (newRating !== null && oldRating === null) {
+        // Was comment-only, now adding a rating — increment totalRatings
+        const buddy = await prisma.buddy.findUnique({
+          where: { id: assignment.buddyId },
+        });
+        if (buddy) {
+          const newTotalRatings = buddy.totalRatings + 1;
+          const adjustedRating = (buddy.rating * buddy.totalRatings + newRating) / newTotalRatings;
+          await prisma.buddy.update({
+            where: { id: assignment.buddyId },
+            data: { rating: adjustedRating, totalRatings: newTotalRatings },
+          });
+        }
       }
     } else {
       // Create new review
@@ -715,25 +736,27 @@ export class BookingService {
           userId,
           buddyId: assignment.buddyId,
           serviceId: booking.serviceId,
-          rating: reviewData.rating,
+          rating: reviewData.rating ?? null,
           comment: reviewData.comment,
         },
       });
 
-      // Update buddy rating
-      const buddy = await prisma.buddy.findUnique({
-        where: { id: assignment.buddyId },
-      });
-      if (buddy) {
-        const newTotalRatings = buddy.totalRatings + 1;
-        const newRating = (buddy.rating * buddy.totalRatings + reviewData.rating) / newTotalRatings;
-        await prisma.buddy.update({
+      // Update buddy rating only if a rating was provided
+      if (reviewData.rating !== undefined) {
+        const buddy = await prisma.buddy.findUnique({
           where: { id: assignment.buddyId },
-          data: {
-            rating: newRating,
-            totalRatings: newTotalRatings,
-          },
         });
+        if (buddy) {
+          const newTotalRatings = buddy.totalRatings + 1;
+          const updatedRating = (buddy.rating * buddy.totalRatings + reviewData.rating) / newTotalRatings;
+          await prisma.buddy.update({
+            where: { id: assignment.buddyId },
+            data: {
+              rating: updatedRating,
+              totalRatings: newTotalRatings,
+            },
+          });
+        }
       }
     }
 

@@ -98,6 +98,12 @@ export class UserController {
       const userId = req.user!.id;
       const { isDefault, latitude, longitude, ...addressData } = req.body;
 
+      // Enforce maximum 5 addresses per user
+      const addressCount = await prisma.address.count({ where: { userId } });
+      if (addressCount >= 5) {
+        throw new ApiError(400, 'You can have a maximum of 5 addresses. Please edit or delete an existing address.');
+      }
+
       let newAddress: any;
 
       await prisma.$transaction(async (tx: any) => {

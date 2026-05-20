@@ -26,7 +26,10 @@ export const cancelBookingSchema = z.object({
 
 export const reviewSchema = z.object({
   body: z.object({
-    rating: z.number().int().min(1).max(5),
+    rating: z.number().int().min(1).max(5).optional(),
     comment: z.string().min(10).max(500).optional(),
-  }),
+  }).refine(
+    (data) => data.rating !== undefined || (data.comment !== undefined && data.comment.trim().length > 0),
+    { message: 'Either a rating or a comment is required' }
+  ),
 });

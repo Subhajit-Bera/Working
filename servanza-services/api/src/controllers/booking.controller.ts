@@ -33,7 +33,16 @@ export class BookingController {
         if (!dbService.isActive) {
           throw new ApiError(400, `Service ${dbService.title} is currently unavailable`);
         }
-        calculatedSubtotal += dbService.basePrice * (item.quantity || 1);
+        // Resolve variant pricing if variantId is present
+        let itemPrice = dbService.basePrice;
+        if (item.variantId) {
+          const metadata = dbService.metadata as any;
+          const variant = metadata?.variants?.[item.variantId];
+          if (variant?.price !== undefined) {
+            itemPrice = variant.price;
+          }
+        }
+        calculatedSubtotal += itemPrice * (item.quantity || 1);
       }
 
       // Apply coupon discount if provided

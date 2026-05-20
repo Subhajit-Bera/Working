@@ -456,7 +456,7 @@ model Review {
   userId      String
   buddyId     String
   serviceId   String
-  rating      Int      // 1-5
+  rating      Int?     // 1-5, optional to allow comment-only reviews
   comment     String?
   reply       String?  // Admin/buddy reply
   createdAt   DateTime @default(now())

@@ -6,7 +6,7 @@ import crypto from 'crypto';
 const prisma = new PrismaClient();
 
 interface CreateOrderData {
-  items: { serviceId: string; quantity: number }[];
+  items: { serviceId: string; quantity: number; variantId?: string }[];
   addressId: string;
   scheduledStart: Date | string;
   isImmediate?: boolean;
@@ -25,6 +25,36 @@ export class OrderService {
 
   private generateOrderNumber(): string {
     return `ORD-${Date.now().toString().slice(-6)}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+  }
+
+  /**
+   * Resolve price, duration, and payouts for an item.
+   * If variantId is present and found in service.metadata.variants, use variant values.
+   * Otherwise, fall back to base service values.
+   */
+  private resolveItemValues(service: any, variantId?: string) {
+    const base = {
+      price: service.basePrice,
+      durationMins: service.durationMins,
+      employeePayout: service.employeePayout,
+      cmpPayout: service.cmpPayout,
+      variantLabel: null as string | null,
+    };
+
+    if (!variantId) return base;
+
+    const metadata = service.metadata as any;
+    const variants = metadata?.variants as Record<string, any> | undefined;
+    if (!variants || !variants[variantId]) return base;
+
+    const variant = variants[variantId];
+    return {
+      price: variant.price ?? base.price,
+      durationMins: variant.durationMins ?? base.durationMins,
+      employeePayout: variant.employeePayout ?? base.employeePayout,
+      cmpPayout: variant.cmpPayout ?? base.cmpPayout,
+      variantLabel: variant.label ?? variantId,
+    };
   }
 
   async createOrder(userId: string, data: CreateOrderData) {
@@ -51,14 +81,23 @@ export class OrderService {
       throw new ApiError(400, 'Address not found');
     }
 
-    // 3. Calculate Totals
+    // 3. Calculate Totals (variant-aware)
     let subtotal = 0;
+    let totalEmployeePayout = 0;
+    let totalCmpPayout = 0;
+    let totalDurationMins = 0;
+
     for (const item of data.items) {
       const service = services.find(s => s.id === item.serviceId);
       if (!service || !service.isActive) {
         throw new ApiError(400, `Service ${service?.title || item.serviceId} is unavailable`);
       }
-      subtotal += service.basePrice * (item.quantity || 1);
+      const resolved = this.resolveItemValues(service, item.variantId);
+      const qty = item.quantity || 1;
+      subtotal += resolved.price * qty;
+      totalEmployeePayout += resolved.employeePayout * qty;
+      totalCmpPayout += resolved.cmpPayout * qty;
+      totalDurationMins += resolved.durationMins * qty;
     }
 
     let discountAmount = 0;
@@ -83,14 +122,6 @@ export class OrderService {
     const discountedSubtotal = subtotal - discountAmount;
     const taxAmount = Math.round(discountedSubtotal * 0.18);
     const totalAmount = discountedSubtotal + taxAmount;
-
-    let totalDurationMins = 0;
-    for (const item of data.items) {
-      const service = services.find(s => s.id === item.serviceId);
-      if (service) {
-        totalDurationMins += service.durationMins * (item.quantity || 1);
-      }
-    }
 
     const scheduledStart = new Date(data.scheduledStart);
     const scheduledEnd = new Date(scheduledStart.getTime() + totalDurationMins * 60000);
@@ -118,16 +149,6 @@ export class OrderService {
     });
 
     // 5. Create Single Master Booking
-    let totalEmployeePayout = 0;
-    let totalCmpPayout = 0;
-    for (const item of data.items) {
-      const service = services.find(s => s.id === item.serviceId);
-      if (service) {
-        totalEmployeePayout += service.employeePayout * (item.quantity || 1);
-        totalCmpPayout += service.cmpPayout * (item.quantity || 1);
-      }
-    }
-
     const primaryServiceId = data.items[0].serviceId;
 
     const bookingData = {
@@ -149,12 +170,16 @@ export class OrderService {
       metadata: {
         items: data.items.map((item: any) => {
           const service = services.find(s => s.id === item.serviceId);
+          const resolved = this.resolveItemValues(service, item.variantId);
           return {
             serviceId: item.serviceId,
             quantity: item.quantity || 1,
+            variantId: item.variantId || null,
             title: service?.title,
-            imageUrl: service?.imageUrl,
-            price: service?.basePrice
+            imageUrl: (service?.imageUrls as string[])?.[0] || service?.imageUrl,
+            price: resolved.price,
+            durationMins: resolved.durationMins,
+            variantLabel: resolved.variantLabel,
           };
         })
       }
