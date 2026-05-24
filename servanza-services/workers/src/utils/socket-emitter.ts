@@ -31,7 +31,7 @@ export function emitToUser(userId: string, event: string, data: any): void {
 export function emitToBuddy(buddyId: string, event: string, data: any): void {
     try {
         getEmitter().to(`buddy:${buddyId}`).emit(event, data);
-        logger.info(`[SOCKET-EMIT] Emitted ${event} to buddy:${buddyId}`, JSON.stringify(data));
+        logger.info(`[SOCKET-EMIT] Emitted ${event} to buddy:${buddyId} ${JSON.stringify(data)}`);
     } catch (err) {
         logger.error(`[SOCKET-EMIT] Failed to emit ${event} to buddy:${buddyId}:`, err);
     }

@@ -173,7 +173,11 @@ export const notificationProcessor = async (job: Job<NotificationJobData>) => {
 
       // Convert all data values to strings
       for (const [key, value] of Object.entries(data)) {
-        stringifiedData[key] = String(value);
+        if (typeof value === 'object' && value !== null) {
+          stringifiedData[key] = JSON.stringify(value);
+        } else {
+          stringifiedData[key] = String(value);
+        }
       }
 
       await sendPushNotificationToUser(userId, {

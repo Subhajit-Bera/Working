@@ -1118,7 +1118,7 @@ export class BuddyService {
     const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [todayEarnings, weekEarnings, monthEarnings, payoutTransactions] = await Promise.all([
+    const [todayEarnings, weekEarnings, monthEarnings, payoutTransactions, recentJobs] = await Promise.all([
       this.getEarningsForPeriod(buddyId, startOfToday),
       this.getEarningsForPeriod(buddyId, startOfWeek),
       this.getEarningsForPeriod(buddyId, startOfMonth),
@@ -1134,6 +1134,16 @@ export class BuddyService {
         _sum: {
           amount: true
         }
+      }),
+      prisma.assignment.findMany({
+        where: { buddyId, status: AssignmentStatus.COMPLETED },
+        orderBy: { completedAt: 'desc' },
+        take: 3,
+        include: {
+          booking: {
+            select: { service: { select: { title: true } }, employeePayout: true }
+          }
+        }
       })
     ]);
 
@@ -1148,6 +1158,7 @@ export class BuddyService {
       today: todayEarnings,
       thisWeek: weekEarnings,
       thisMonth: monthEarnings,
+      recentJobs,
     };
   }
 

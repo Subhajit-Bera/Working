@@ -125,7 +125,7 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
       await addNotificationJob('buddy-assignment', assignment.buddyId, jobPayload);
 
       // Emit socket event for real-time
-      emitToBuddy(assignment.buddyId, 'job:assigned', jobPayload);
+      emitToBuddy(assignment.buddyId, 'buddy-assignment', jobPayload);
 
       logger.info(`[Assignment] Created/updated assignment ${assignment.id} for buddy ${assignment.buddyId}`);
     }
