@@ -146,6 +146,14 @@ export const notificationProcessor = async (job: Job<NotificationJobData>) => {
         notifType = NotificationType.GENERAL;
         break;
 
+      // Chat Messages
+      case 'chat-message':
+      case NotificationType.CHAT_MESSAGE:
+        title = title || data.senderName || 'New Message';
+        body = body || data.message || 'You received a new message';
+        notifType = NotificationType.CHAT_MESSAGE;
+        break;
+
       default:
         title = title || 'Notification';
         body = body || data.message || 'You have a new notification';

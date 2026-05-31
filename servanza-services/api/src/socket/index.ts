@@ -88,18 +88,23 @@ export const emitToUser = async (userId: string, event: string, data: any): Prom
       io.to(`user:${userId}`).emit(event, data);
       logger.debug(`Emitted ${event} to user ${userId} (online)`);
     } else {
-      // User is offline - persist message for later
-      await prisma.offlineMessage.create({
-        data: {
-          userId,
-          event,
-          data,
-          isRead: false,
-        },
-      });
-      logger.info(`User ${userId} offline, ${event} persisted to database`);
+      // User is offline - persist message for later if it's a durable event
+      if (!event.startsWith('call:')) {
+        await prisma.offlineMessage.create({
+          data: {
+            userId,
+            event,
+            data,
+            isRead: false,
+          },
+        });
+        logger.info(`User ${userId} offline, ${event} persisted to database`);
+      } else {
+        logger.debug(`User ${userId} offline, skipped persisting transient event ${event}`);
+      }
     }
   } catch (error) {
+    if (!event.startsWith('call:')) {
     // DB is down - use Redis Dead Letter Queue as fallback
     try {
       const { redis } = await import('../config/redis');
@@ -113,6 +118,7 @@ export const emitToUser = async (userId: string, event: string, data: any): Prom
     } catch (redisError) {
       // Both DB and Redis down - message will be lost
       logger.error(`[CRITICAL] Both DB and Redis down, message lost for ${userId}`);
+    }
     }
 
     // Still emit - if user is online they'll get it
@@ -133,18 +139,23 @@ export const emitToBuddy = async (buddyId: string, event: string, data: any): Pr
       io.to(`buddy:${buddyId}`).emit(event, data);
       logger.debug(`Emitted ${event} to buddy ${buddyId} (online)`);
     } else {
-      // Buddy is offline - persist for later
-      await prisma.offlineMessage.create({
-        data: {
-          userId: buddyId, // Buddy is also a user
-          event,
-          data,
-          isRead: false,
-        },
-      });
-      logger.info(`Buddy ${buddyId} offline, ${event} persisted to database`);
+      // Buddy is offline - persist for later if it's a durable event
+      if (!event.startsWith('call:')) {
+        await prisma.offlineMessage.create({
+          data: {
+            userId: buddyId, // Buddy is also a user
+            event,
+            data,
+            isRead: false,
+          },
+        });
+        logger.info(`Buddy ${buddyId} offline, ${event} persisted to database`);
+      } else {
+        logger.debug(`Buddy ${buddyId} offline, skipped persisting transient event ${event}`);
+      }
     }
   } catch (error) {
+    if (!event.startsWith('call:')) {
     // DB is down - use Redis Dead Letter Queue as fallback
     try {
       const { redis } = await import('../config/redis');
@@ -157,6 +168,7 @@ export const emitToBuddy = async (buddyId: string, event: string, data: any): Pr
       logger.warn(`[DLQ] DB down, message queued in Redis for buddy ${buddyId}`);
     } catch (redisError) {
       logger.error(`[CRITICAL] Both DB and Redis down, message lost for buddy ${buddyId}`);
+    }
     }
 
     io.to(`buddy:${buddyId}`).emit(event, data);

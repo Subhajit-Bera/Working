@@ -11,6 +11,7 @@ export interface FCMNotificationPayload {
   sound?: string;
   badge?: number;
   clickAction?: string;
+  channelId?: string;
 }
 
 export interface FCMBatchNotification {
@@ -194,7 +195,7 @@ export class FCMService {
           priority: 'high',
           notification: {
             sound: payload.sound || 'default',
-            channelId: 'default',
+            channelId: payload.channelId || 'default',
             clickAction: payload.clickAction,
             imageUrl: payload.imageUrl,
           },
@@ -299,7 +300,7 @@ export class FCMService {
           priority: 'high',
           notification: {
             sound: payload.sound || 'default',
-            channelId: 'default',
+            channelId: payload.channelId || 'default',
             imageUrl: payload.imageUrl,
           },
         },

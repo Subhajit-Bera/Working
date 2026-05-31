@@ -849,6 +849,8 @@ export class BuddyService {
     });
     emitToUser(assignment.booking.userId, 'booking:updated', {
       bookingId: assignment.bookingId,
+      status: BookingStatus.ON_WAY,
+      assignmentId,
     });
 
     logger.info(`Buddy ${buddyId} started tracking for job ${assignmentId}`);
@@ -915,6 +917,8 @@ export class BuddyService {
     });
     emitToUser(assignment.booking.userId, 'booking:updated', {
       bookingId: assignment.bookingId,
+      status: BookingStatus.ARRIVED,
+      assignmentId,
     });
 
     logger.info(`Buddy arrived: ${assignmentId} by buddy ${buddyId}`);
@@ -980,6 +984,8 @@ export class BuddyService {
     });
     emitToUser(assignment.booking.userId, 'booking:updated', {
       bookingId: assignment.bookingId,
+      status: BookingStatus.IN_PROGRESS,
+      assignmentId,
     });
 
     logger.info(`Job started: ${assignmentId} by buddy ${buddyId}`);
@@ -1293,6 +1299,9 @@ export class BuddyService {
 
     emitToUser(assignment.booking.userId, 'booking:updated', {
       bookingId: assignment.bookingId,
+      status: BookingStatus.IN_PROGRESS,
+      completionOtp: otp,
+      assignmentId,
     });
 
     logger.info(`[BuddyService] Sent completion OTP for assignment ${assignmentId} to user ${assignment.booking.userId}`);

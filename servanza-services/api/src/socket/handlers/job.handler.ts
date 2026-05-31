@@ -6,7 +6,7 @@ import { BookingService } from '../../services/booking.service';
 // import { ApiError } from '../../utils/errors';
 import { checkDistributedRateLimit } from '../distributed-rate-limiter';
 
-const bookingService = new BookingService();
+let bookingService: BookingService;
 
 export const handleJobEvents = (socket: Socket, io: Server): void => {
 
@@ -194,6 +194,7 @@ export const handleJobEvents = (socket: Socket, io: Server): void => {
 
     /* ... call bookingService.completeBookingAndAssignment ... */
     try {
+      if (!bookingService) bookingService = new BookingService();
       const buddyId = socket.data.userId; // Map correctly if needed
       await bookingService.completeBookingAndAssignment(data.assignmentId, buddyId, data.otp);
       socket.emit('job:complete:success', { assignmentId: data.assignmentId });

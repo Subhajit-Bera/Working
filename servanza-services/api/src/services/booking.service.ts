@@ -730,6 +730,9 @@ export class BookingService {
     });
     emitToUser(booking.userId, 'booking:updated', {
       bookingId: booking.id,
+      status: BookingStatus.COMPLETED,
+      completedAt: updatedBooking.completedAt,
+      assignmentId,
     });
 
     logger.info(`Job completed: ${assignmentId} by buddy ${actorBuddyId}`);

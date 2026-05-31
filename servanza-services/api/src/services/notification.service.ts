@@ -573,6 +573,25 @@ export class NotificationService {
       where: { userId: buddyId, recipientType: 'BUDDY', isRead: false },
     });
   }
+
+  /**
+   * Notify user/buddy of a new chat message
+   */
+  async notifyChatMessage(userId: string, data: any, targetApp: 'CUSTOMER_APP' | 'BUDDY_APP'): Promise<void> {
+    const title = data.senderName || 'New Message';
+    const body = data.content || 'You received a new message';
+
+    await this.createAndQueueNotification(
+      userId,
+      NotificationType.CHAT_MESSAGE,
+      title,
+      body,
+      data,
+      data.bookingId,
+      undefined,
+      targetApp
+    );
+  }
 }
 
 // Register event-bus listeners to handle notifications emitted by other services

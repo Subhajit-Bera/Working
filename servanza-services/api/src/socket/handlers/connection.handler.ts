@@ -30,6 +30,11 @@ export const handleConnection = async (socket: Socket): Promise<void> => {
       logger.info(`Delivering ${pendingMessages.length} offline messages to user ${userId}`);
 
       for (const msg of pendingMessages) {
+        if (msg.event.startsWith('call:')) {
+          // Delete stale call message
+          await prisma.offlineMessage.delete({ where: { id: msg.id } }).catch(() => {});
+          continue;
+        }
         socket.emit(msg.event, msg.data);
       }
 

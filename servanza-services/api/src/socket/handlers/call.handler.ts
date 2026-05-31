@@ -89,15 +89,50 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           },
         });
 
-        // Send call to recipient
+        // Store pending call in Redis with 35s TTL
+        const { cacheSet } = await import('../../config/redis');
+        const initiatedAt = new Date().toISOString();
+        const pendingCallData = {
+          callId: callLog.id,
+          bookingId: data.bookingId,
+          callerId: userId,
+          receiverId: access.recipientUserId,
+          offer: data.offer,
+          iceServers: ICE_SERVERS,
+          initiatedAt
+        };
+        await cacheSet(`call:pending:${callLog.id}`, pendingCallData, 35);
+
+        // Send call to recipient via socket (lightweight)
         const { emitToUser } = await import('..');
         await emitToUser(access.recipientUserId, 'call:incoming', {
           callId: callLog.id,
           bookingId: data.bookingId,
           caller: access.callerInfo,
-          offer: data.offer,
-          iceServers: ICE_SERVERS,
+          initiatedAt
         });
+
+        // Send FCM push for background handling
+        try {
+          const { NotificationService } = await import('../../services/notification.service');
+          const notifService = new NotificationService();
+          await (notifService as any).sendRichPushNotification(access.recipientUserId, {
+            title: 'Incoming Voice Call',
+            body: `${access.callerInfo.name || 'Someone'} is calling you`,
+            sound: 'ringtone',
+            channelId: 'servanza_calls',
+            data: {
+              type: 'incoming-call',
+              callId: callLog.id,
+              bookingId: data.bookingId,
+              caller: JSON.stringify(access.callerInfo),
+              initiatedAt,
+              channelId: 'servanza_calls'
+            }
+          });
+        } catch (fcmError) {
+          logger.error('[Call] FCM push failed:', fcmError);
+        }
 
         // Confirm to caller
         socket.emit('call:initiated', {
@@ -114,6 +149,8 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
                 where: { id: callLog.id },
                 data: { status: CallStatusEnum.MISSED, endedAt: new Date() },
               });
+              const { cacheDel } = await import('../../config/redis');
+              await cacheDel(`call:pending:${callLog.id}`);
               io.to(`user:${userId}`).emit('call:missed', { callId: callLog.id });
               io.to(`user:${access.recipientUserId}`).emit('call:missed', { callId: callLog.id });
               logger.info(`[Call] Call ${callLog.id} missed (timeout)`);
@@ -151,6 +188,9 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           where: { id: data.callId },
           data: { status: CallStatusEnum.CONNECTED, startedAt: new Date() },
         });
+
+        const { cacheDel } = await import('../../config/redis');
+        await cacheDel(`call:pending:${data.callId}`);
 
         // Send answer to caller
         io.to(`user:${call.callerId}`).emit('call:answered', {
@@ -197,6 +237,9 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
         data: { status: CallStatusEnum.REJECTED, endedAt: new Date() },
       });
 
+      const { cacheDel } = await import('../../config/redis');
+      await cacheDel(`call:pending:${data.callId}`);
+
       io.to(`user:${call.callerId}`).emit('call:rejected', { callId: data.callId });
       logger.info(`[Call] Call ${data.callId} rejected by ${userId}`);
     } catch (error: any) {
@@ -224,6 +267,9 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           durationSecs,
         },
       });
+
+      const { cacheDel } = await import('../../config/redis');
+      await cacheDel(`call:pending:${data.callId}`);
 
       // Notify the other party
       const recipientId = call.callerId === userId ? call.receiverId : call.callerId;

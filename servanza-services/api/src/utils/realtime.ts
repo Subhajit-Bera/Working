@@ -1,24 +1,30 @@
+import { emitToUser as socketEmitToUser, emitToBuddy as socketEmitToBuddy, emitToAdmins as socketEmitToAdmins } from '../socket/index';
+import { logger } from './logger';
+
 export function emitToUser(userId: string, event: string, data: any) {
   try {
-    if ((global as any).io && typeof (global as any).io.to === 'function') {
-      (global as any).io.to(`user:${userId}`).emit(event, data);
-    }
-  } catch (err) { }
+    socketEmitToUser(userId, event, data).catch(err => {
+      logger.error(`Error in emitToUser: ${err}`);
+    });
+  } catch (err) { 
+    logger.error(`Error in emitToUser: ${err}`);
+  }
 }
 
 export function emitToBuddy(buddyId: string, event: string, data: any) {
   try {
-    if ((global as any).io && typeof (global as any).io.to === 'function') {
-      (global as any).io.to(`buddy:${buddyId}`).emit(event, data);
-    }
-  } catch (err) { }
+    socketEmitToBuddy(buddyId, event, data).catch(err => {
+      logger.error(`Error in emitToBuddy: ${err}`);
+    });
+  } catch (err) {
+    logger.error(`Error in emitToBuddy: ${err}`);
+  }
 }
 
 export function emitToAdmins(event: string, data: any) {
   try {
-    if ((global as any).io && typeof (global as any).io.to === 'function') {
-      (global as any).io.to('admins').emit(event, data);
-    }
-  } catch (err) { }
+    socketEmitToAdmins(event, data);
+  } catch (err) {
+    logger.error(`Error in emitToAdmins: ${err}`);
+  }
 }
-

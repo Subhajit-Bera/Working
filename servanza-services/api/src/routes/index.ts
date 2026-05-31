@@ -13,6 +13,7 @@ import promotionRoutes from './promotion.routes';
 import reviewRoutes from './review.routes';
 import chatRoutes from './chat.routes';
 import orderRoutes from './order.routes';
+import callRoutes from './call.routes';
 
 
 const router = Router();
@@ -36,6 +37,7 @@ router.use('/coupons', couponRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/orders', orderRoutes);
 router.use('/', chatRoutes); // Chat routes use /bookings/:bookingId/messages paths
+router.use('/calls', callRoutes);
 
 // Health check
 router.get('/health', (_req: Request, res: Response) => {

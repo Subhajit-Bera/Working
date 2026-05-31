@@ -29,7 +29,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
   });
 
   // ─── Send message ─────────────────────────────────────────────────
-  socket.on('chat:send', async (data: { bookingId: string; content: string; type?: string }) => {
+  socket.on('chat:send', async (data: { bookingId: string; content: string; type?: string; clientMessageId?: string }) => {
     try {
       if (!data.content?.trim()) {
         socket.emit('error', { message: 'Message content is required' });
@@ -59,6 +59,7 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
 
       const payload = {
         id: message.id,
+        clientMessageId: data.clientMessageId,
         bookingId: message.bookingId,
         senderId: message.senderId,
         sender: message.sender,
@@ -84,20 +85,16 @@ export const handleChatEvents = (socket: Socket, io: Server): void => {
         });
         
         // Also send an FCM Push Notification
-        const { FCMService } = await import('../../services/fcm.service');
-        const fcmService = new FCMService();
+        const { NotificationService } = await import('../../services/notification.service');
+        const notifService = new NotificationService();
         
         const targetApp = access.isBuddy ? 'CUSTOMER_APP' : 'BUDDY_APP';
-        await fcmService.sendToUser(access.recipientUserId, {
-          title: `New message from ${message.sender.name}`,
-          body: message.content,
-          data: {
-            type: 'chat-message',
-            bookingId: data.bookingId,
-            messageId: message.id,
-            customerName: message.sender.name,
-            content: message.content,
-          }
+        await notifService.notifyChatMessage(access.recipientUserId, {
+          type: 'chat-message',
+          bookingId: data.bookingId,
+          messageId: message.id,
+          senderName: message.sender.name,
+          content: message.content,
         }, targetApp);
       }
 
