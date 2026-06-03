@@ -1080,6 +1080,7 @@ export class BuddyService {
         booking: {
           select: {
             id: true,
+            employeePayout: true,
             totalAmount: true,
             completedAt: true,
             service: {
@@ -1093,7 +1094,7 @@ export class BuddyService {
       orderBy: { completedAt: 'desc' },
     });
 
-    const totalEarnings = assignments.reduce((sum: number, assignment: any) => sum + assignment.booking.totalAmount, 0);
+    const totalEarnings = assignments.reduce((sum: number, assignment: any) => sum + (assignment.booking.employeePayout || 0), 0);
 
     return {
       earnings: assignments,
@@ -1178,13 +1179,14 @@ export class BuddyService {
       include: {
         booking: {
           select: {
+            employeePayout: true,
             totalAmount: true,
           },
         },
       },
     });
 
-    const total = assignments.reduce((sum: number, assignment: any) => sum + assignment.booking.totalAmount, 0);
+    const total = assignments.reduce((sum: number, assignment: any) => sum + (assignment.booking.employeePayout || 0), 0);
 
     return {
       amount: total,

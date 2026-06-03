@@ -46,7 +46,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
   // ─── Initiate a call ──────────────────────────────────────────────
   socket.on(
     'call:initiate',
-    async (data: { bookingId: string; offer: RTCSessionDescription }) => {
+    async (data: { bookingId: string; offer: RTCSessionDescription; clientCallId?: string }) => {
       try {
         const access = await validateCommunicationAccess(userId, data.bookingId, { channel: 'call' });
         if (!access) {
@@ -78,6 +78,16 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           return;
         }
 
+        const { cacheGet, cacheSet } = await import('../../config/redis');
+
+        if (data.clientCallId) {
+          const isCancelled = await cacheGet(`call:cancelled:${data.clientCallId}`);
+          if (isCancelled) {
+            socket.emit('call:cancelled', { clientCallId: data.clientCallId });
+            return;
+          }
+        }
+
         // Create call log
         const callLog = await prisma.callLog.create({
           data: {
@@ -89,8 +99,19 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           },
         });
 
+        if (data.clientCallId) {
+          const isCancelled = await cacheGet(`call:cancelled:${data.clientCallId}`);
+          if (isCancelled) {
+            await prisma.callLog.update({
+              where: { id: callLog.id },
+              data: { status: CallStatusEnum.ENDED, endedAt: new Date() },
+            });
+            socket.emit('call:cancelled', { callId: callLog.id, clientCallId: data.clientCallId });
+            return;
+          }
+        }
+
         // Store pending call in Redis with 35s TTL
-        const { cacheSet } = await import('../../config/redis');
         const initiatedAt = new Date().toISOString();
         const pendingCallData = {
           callId: callLog.id,
@@ -137,6 +158,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
         // Confirm to caller
         socket.emit('call:initiated', {
           callId: callLog.id,
+          clientCallId: data.clientCallId,
           iceServers: ICE_SERVERS,
         });
 
@@ -209,9 +231,19 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
   // ─── Relay ICE candidates ────────────────────────────────────────
   socket.on(
     'call:ice-candidate',
-    async (data: { callId: string; candidate: RTCIceCandidate }) => {
+    async (data: { callId?: string; clientCallId?: string; candidate: RTCIceCandidate }) => {
       try {
-        const call = await prisma.callLog.findUnique({ where: { id: data.callId } });
+        if (!data.callId && !data.clientCallId) return;
+
+        let callId = data.callId;
+
+        // Note: For full accuracy, if we only have clientCallId, we'd need a way to look up callId.
+        // Usually the client buffers ICE candidates until it gets callId. If it sends clientCallId,
+        // it means we should probably drop it if callId isn't known, since client will resend it 
+        // once it gets callId (we implemented buffering).
+        if (!callId) return;
+
+        const call = await prisma.callLog.findUnique({ where: { id: callId } });
         if (!call) return;
 
         // Relay to the other party
@@ -251,7 +283,10 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
   socket.on('call:end', async (data: { callId: string }) => {
     try {
       const call = await prisma.callLog.findUnique({ where: { id: data.callId } });
-      if (!call) return;
+      if (!call || call.status === CallStatusEnum.ENDED || call.status === CallStatusEnum.REJECTED || call.status === CallStatusEnum.MISSED) {
+        // Idempotent: already ended
+        return;
+      }
 
       // Calculate duration if call was connected
       let durationSecs: number | undefined;
@@ -293,6 +328,17 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
       logger.info(`[Call] Call ${data.callId} ended, duration: ${durationSecs}s`);
     } catch (error: any) {
       logger.error(`[Call] Error ending call:`, error.message);
+    }
+  });
+
+  // ─── Cancel a call before answer/initiation ───────────────────────
+  socket.on('call:cancel', async (data: { clientCallId: string }) => {
+    try {
+      const { cacheSet } = await import('../../config/redis');
+      await cacheSet(`call:cancelled:${data.clientCallId}`, '1', 60); // 1 min TTL
+      logger.info(`[Call] Call cancelled early by client ${data.clientCallId}`);
+    } catch (error: any) {
+      logger.error(`[Call] Error cancelling call:`, error.message);
     }
   });
 };

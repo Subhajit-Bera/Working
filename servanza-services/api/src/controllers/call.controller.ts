@@ -37,6 +37,10 @@ export const rejectCall = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Call not found' });
     }
 
+    if (call.status === 'REJECTED' || call.status === 'ENDED' || call.status === 'MISSED') {
+      return res.status(200).json({ success: true, message: 'Call already ended or rejected' });
+    }
+
     if (call.status !== 'RINGING') {
       return res.status(400).json({ success: false, message: 'Call is not ringing' });
     }
@@ -69,6 +73,10 @@ export const endCall = async (req: Request, res: Response) => {
     const call = await prisma.callLog.findUnique({ where: { id: callId } });
     if (!call || (call.callerId !== userId && call.receiverId !== userId)) {
       return res.status(404).json({ success: false, message: 'Call not found' });
+    }
+
+    if (call.status === 'ENDED' || call.status === 'REJECTED' || call.status === 'MISSED') {
+      return res.status(200).json({ success: true, message: 'Call already ended' });
     }
 
     let durationSecs: number | undefined;

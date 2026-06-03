@@ -990,7 +990,12 @@ export class BookingService {
       include: {
         assignments: {
           where: {
-            status: { in: [AssignmentStatus.ACCEPTED] },
+            status: { in: [
+              AssignmentStatus.ACCEPTED, 
+              AssignmentStatus.ON_WAY, 
+              AssignmentStatus.ARRIVED, 
+              AssignmentStatus.IN_PROGRESS
+            ] },
           },
           include: {
             buddy: {
