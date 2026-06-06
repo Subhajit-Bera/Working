@@ -65,6 +65,18 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           data: { status: CallStatusEnum.MISSED, endedAt: new Date() }
         });
 
+        // Clean up stale CONNECTED calls older than 5 minutes (orphaned from crash/disconnect)
+        const fiveMinutesAgo = new Date(Date.now() - 300000);
+        await prisma.callLog.updateMany({
+          where: {
+            bookingId: data.bookingId,
+            status: CallStatusEnum.CONNECTED,
+            createdAt: { lt: fiveMinutesAgo }
+          },
+          data: { status: CallStatusEnum.ENDED, endedAt: new Date() }
+        });
+
+
         // Check if there's already an active call for this booking
         const activeCall = await prisma.callLog.findFirst({
           where: {
@@ -173,6 +185,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
               });
               const { cacheDel } = await import('../../config/redis');
               await cacheDel(`call:pending:${callLog.id}`);
+              await cacheDel(`call:ice:${callLog.id}`);
               io.to(`user:${userId}`).emit('call:missed', { callId: callLog.id });
               io.to(`user:${access.recipientUserId}`).emit('call:missed', { callId: callLog.id });
               logger.info(`[Call] Call ${callLog.id} missed (timeout)`);
@@ -213,6 +226,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
 
         const { cacheDel } = await import('../../config/redis');
         await cacheDel(`call:pending:${data.callId}`);
+        await cacheDel(`call:ice:${data.callId}`);
 
         // Send answer to caller
         io.to(`user:${call.callerId}`).emit('call:answered', {
@@ -252,6 +266,17 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
           callId: data.callId,
           candidate: data.candidate,
         });
+
+        // If the call is still RINGING and these are the CALLER's candidates,
+        // also store them in Redis so the receiver can fetch them alongside
+        // the offer when answering (their socket listener might not be active yet).
+        if (call.status === CallStatusEnum.RINGING && call.callerId === userId) {
+          const { cacheGet, cacheSet } = await import('../../config/redis');
+          const cacheKey = `call:ice:${data.callId}`;
+          const existing = await cacheGet<RTCIceCandidate[]>(cacheKey) || [];
+          existing.push(data.candidate);
+          await cacheSet(cacheKey, existing, 60); // 60s TTL
+        }
       } catch (error: any) {
         logger.error(`[Call] ICE candidate relay error:`, error.message);
       }
@@ -271,6 +296,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
 
       const { cacheDel } = await import('../../config/redis');
       await cacheDel(`call:pending:${data.callId}`);
+      await cacheDel(`call:ice:${data.callId}`);
 
       io.to(`user:${call.callerId}`).emit('call:rejected', { callId: data.callId });
       logger.info(`[Call] Call ${data.callId} rejected by ${userId}`);
@@ -305,6 +331,7 @@ export const handleCallEvents = (socket: Socket, io: Server): void => {
 
       const { cacheDel } = await import('../../config/redis');
       await cacheDel(`call:pending:${data.callId}`);
+      await cacheDel(`call:ice:${data.callId}`);
 
       // Notify the other party
       const recipientId = call.callerId === userId ? call.receiverId : call.callerId;

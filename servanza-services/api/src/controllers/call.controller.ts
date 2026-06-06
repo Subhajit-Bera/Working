@@ -17,9 +17,16 @@ export const getPendingCall = async (req: Request, res: Response) => {
       });
     }
 
+    // Also fetch any ICE candidates the caller has already sent
+    // (these may have been relayed via socket before the receiver's listener was active)
+    const callerIceCandidates = await cacheGet<any[]>(`call:ice:${callId}`) || [];
+
     return res.status(200).json({
       success: true,
-      data: pendingCall,
+      data: {
+        ...pendingCall,
+        callerIceCandidates,
+      },
     });
   } catch (error) {
     logger.error('Error fetching pending call:', error);
