@@ -527,7 +527,7 @@ export class BuddyService {
     }
 
     if (assignment.status !== AssignmentStatus.PENDING) {
-      throw new ApiError(400, 'This job offer has expired or already been processed');
+      throw new ApiError(400, `This job offer has expired or already been processed (current status: ${assignment.status})`);
     }
 
     // Step 2: Use atomic UPDATE with status guard to claim the job.

@@ -87,7 +87,8 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
             },
           },
           update: {
-            // No-op if already exists - assignment already sent
+            // Reset status to PENDING if this is a dispatch-retry cycle
+            status: AssignmentStatus.PENDING,
             estimatedEtaMins: Math.ceil(buddy.eta),
             distanceKm: buddy.distance,
           },
