@@ -75,6 +75,16 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
     // Create assignments in a TRANSACTION for atomicity and idempotency
     // Using upsert prevents duplicates if job retries after partial completion
     const assignments = await prisma.$transaction(async (tx) => {
+      // Revalidate booking is still PENDING inside the transaction
+      const claimCheck = await tx.booking.findFirst({
+        where: { id: booking.id, status: BookingStatus.PENDING }
+      });
+
+      if (!claimCheck) {
+        logger.info(`[Assignment] Race condition: Booking ${booking.id} claimed concurrently (likely admin override). Aborting worker job.`);
+        return []; // Return empty to signal race loss without failing the job
+      }
+
       const created: Array<{ id: string; buddyId: string; eta: number; distance: number }> = [];
 
       for (const buddy of selectedBuddies) {
@@ -91,6 +101,9 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
             status: AssignmentStatus.PENDING,
             estimatedEtaMins: Math.ceil(buddy.eta),
             distanceKm: buddy.distance,
+            cancelledAt: null,
+            rejectedAt: null,
+            rejectionReason: null,
           },
           create: {
             bookingId: booking.id,
@@ -106,6 +119,11 @@ export const assignmentProcessor = async (job: Job<AssignmentJobData>) => {
 
       return created;
     });
+
+    if (assignments.length === 0) {
+       // Lost race, exit successfully
+       return { success: true, count: 0, reason: 'Lost race to concurrent assignment' };
+    }
 
     // Send notifications AFTER transaction commits (outside transaction)
     for (const assignment of assignments) {

@@ -175,6 +175,21 @@ export async function addQueueJobWithBackupId(
  */
 async function processImmediateBookingFallback(booking: any) {
   try {
+    // Early exit check
+    const stillPending = await prisma.booking.findFirst({
+      where: { id: booking.id, status: BookingStatus.PENDING },
+      select: { excludedBuddyIds: true }
+    });
+
+    if (!stillPending) {
+      logger.info(`[Fallback] Booking ${booking.id} is no longer PENDING, aborting fallback`);
+      return;
+    }
+
+    const excludedIds = stillPending.excludedBuddyIds && stillPending.excludedBuddyIds.length > 0
+        ? Prisma.sql`AND b.id NOT IN (${Prisma.join(stillPending.excludedBuddyIds)})`
+        : Prisma.empty;
+
     // Find ALL available buddies (simplified - no location filter for fallback)
     const availableBuddies = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT b.id
@@ -182,6 +197,7 @@ async function processImmediateBookingFallback(booking: any) {
       JOIN "users" u ON b.id = u.id 
       WHERE u."isActive" = true AND b."isVerified" = true 
         AND b."isAvailable" = true AND b."isOnline" = true
+        ${excludedIds}
       LIMIT 10
     `);
 
@@ -190,28 +206,54 @@ async function processImmediateBookingFallback(booking: any) {
       return;
     }
 
-    // Create assignments for available buddies
-    for (const buddy of availableBuddies) {
-      await prisma.assignment.create({
-        data: {
-          bookingId: booking.id,
-          buddyId: buddy.id,
-          status: AssignmentStatus.PENDING,
-          estimatedEtaMins: 30, // Default estimate
-          distanceKm: 0,
-        },
-      });
-    }
+    let createdCount = 0;
 
-    logger.info(`[Fallback] Created ${availableBuddies.length} assignments for immediate booking ${booking.id}`);
+    await prisma.$transaction(async (tx) => {
+      // Re-verify it's still PENDING right before writing inside tx
+      const claimCheck = await tx.booking.findFirst({
+        where: { id: booking.id, status: BookingStatus.PENDING }
+      });
+      
+      if (!claimCheck) {
+        logger.info(`[Fallback] Race condition: Booking ${booking.id} claimed concurrently. Aborting.`);
+        return;
+      }
+
+      // Upsert assignments for available buddies
+      for (const buddy of availableBuddies) {
+        await tx.assignment.upsert({
+          where: { bookingId_buddyId: { bookingId: booking.id, buddyId: buddy.id } },
+          update: {
+            status: AssignmentStatus.PENDING,
+            estimatedEtaMins: 30, // Default estimate
+            distanceKm: 0,
+            cancelledAt: null,
+            rejectedAt: null,
+            rejectionReason: null,
+          },
+          create: {
+            bookingId: booking.id,
+            buddyId: buddy.id,
+            status: AssignmentStatus.PENDING,
+            estimatedEtaMins: 30, // Default estimate
+            distanceKm: 0,
+          },
+        });
+        createdCount++;
+      }
+    });
+
+    if (createdCount > 0) {
+      logger.info(`[Fallback] Created ${createdCount} assignments for immediate booking ${booking.id}`);
+    }
 
     // Note: Push notifications will fail if Redis is down, but database assignments are created
     // When Redis recovers, buddies can see pending jobs via API polling
   } catch (error) {
     logger.error(`[Fallback] Failed to process immediate booking ${booking.id}:`, error);
-    // Escalate to admin if even fallback fails
-    await prisma.booking.update({
-      where: { id: booking.id },
+    // Escalate to admin if even fallback fails. Only if STILL PENDING.
+    await prisma.booking.updateMany({
+      where: { id: booking.id, status: BookingStatus.PENDING },
       data: {
         status: BookingStatus.ESCALATED,
         escalatedAt: new Date(),

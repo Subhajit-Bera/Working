@@ -303,7 +303,7 @@ export class AdminService {
    * Get buddies
    */
   async getBuddies(filters: any) {
-    const { page = 1, limit = 20, search, isVerified, isAvailable } = filters;
+    const { page = 1, limit = 20, search, isVerified, isAvailable, unavailableStart, unavailableEnd } = filters;
 
     const where: any = {};
 
@@ -323,6 +323,23 @@ export class AdminService {
 
     if (isAvailable !== undefined) {
       where.isAvailable = isAvailable;
+    }
+
+    if (unavailableStart && unavailableEnd) {
+      const start = new Date(unavailableStart);
+      const end = new Date(unavailableEnd);
+      
+      // Exclude buddies that have overlapping committed assignments
+      where.assignments = {
+        none: {
+          status: { in: [AssignmentStatus.ACCEPTED, AssignmentStatus.ON_WAY, AssignmentStatus.ARRIVED, AssignmentStatus.IN_PROGRESS] },
+          booking: {
+            // Overlap logic: booking.start < end AND booking.end > start
+            scheduledStart: { lt: end },
+            scheduledEnd: { gt: start }
+          }
+        }
+      };
     }
 
     const [buddies, total] = await Promise.all([

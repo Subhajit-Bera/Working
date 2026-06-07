@@ -143,9 +143,9 @@ export async function cleanupOldBackups(daysToKeep: number = 7): Promise<number>
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
-    const result = await prisma.jobBackup.deleteMany({
+        const result = await prisma.jobBackup.deleteMany({
         where: {
-            status: { in: [JobBackupStatus.COMPLETED, JobBackupStatus.RECOVERED] },
+            status: { in: [JobBackupStatus.COMPLETED, JobBackupStatus.RECOVERED, JobBackupStatus.CANCELLED] },
             processedAt: { lt: cutoffDate },
         },
     });
@@ -155,4 +155,27 @@ export async function cleanupOldBackups(daysToKeep: number = 7): Promise<number>
     }
 
     return result.count;
+}
+
+/**
+ * Cancel obsolete pending or processing backups for a given bookingId
+ */
+export async function cancelObsoleteBackups(bookingId: string): Promise<number> {
+    try {
+        // We use raw SQL to find and update because jobData is a JSONB field
+        const result = await prisma.$executeRaw`
+            UPDATE "JobBackup"
+            SET "status" = 'CANCELLED'::"JobBackupStatus", "processedAt" = NOW()
+            WHERE "status" IN ('PENDING'::"JobBackupStatus", 'PROCESSING'::"JobBackupStatus")
+            AND "jobData"->>'bookingId' = ${bookingId}
+        `;
+        
+        if (result > 0) {
+            logger.info(`[JobBackup] Cancelled ${result} obsolete backups for booking ${bookingId}`);
+        }
+        return result;
+    } catch (error) {
+        logger.error(`[JobBackup] Failed to cancel obsolete backups for booking ${bookingId}:`, error);
+        return 0;
+    }
 }

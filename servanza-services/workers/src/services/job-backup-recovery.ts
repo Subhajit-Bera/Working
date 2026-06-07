@@ -121,7 +121,7 @@ export async function cleanupOldBackups(daysToKeep: number = 7): Promise<number>
     try {
         const result = await prisma.jobBackup.deleteMany({
             where: {
-                status: { in: [JobBackupStatus.COMPLETED, JobBackupStatus.RECOVERED] },
+                status: { in: [JobBackupStatus.COMPLETED, JobBackupStatus.RECOVERED, JobBackupStatus.CANCELLED] },
                 processedAt: { lt: cutoffDate },
             },
         });

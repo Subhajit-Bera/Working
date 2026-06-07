@@ -602,6 +602,7 @@ enum JobBackupStatus {
   COMPLETED   // Successfully processed
   FAILED      // Failed after max retries
   RECOVERED   // Recovered and requeued after Redis restart
+  CANCELLED   // Cancelled because it is obsolete
 }
 
 model JobBackup {

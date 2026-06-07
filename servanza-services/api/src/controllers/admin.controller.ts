@@ -105,13 +105,15 @@ export class AdminController {
 
   async getBuddies(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { page = 1, limit = 20, search, isVerified, isAvailable } = req.query;
+      const { page = 1, limit = 20, search, isVerified, isAvailable, unavailableStart, unavailableEnd } = req.query;
       const buddies = await adminService.getBuddies({
         page: Number(page),
         limit: Number(limit),
         search: search as string,
         isVerified: isVerified ? isVerified === 'true' : undefined,
         isAvailable: isAvailable ? isAvailable === 'true' : undefined,
+        unavailableStart: unavailableStart as string,
+        unavailableEnd: unavailableEnd as string,
       });
       res.json({ success: true, data: buddies });
     } catch (error) {
@@ -259,8 +261,13 @@ export class AdminController {
       const { id } = req.params; // bookingId
       const { buddyId } = req.body;
       if (!buddyId) throw new ApiError(400, 'buddyId is required');
-      await assignmentService.adminOverrideAssignment(id, buddyId);
-      res.json({ success: true, message: 'Buddy assigned successfully' });
+      const adminUserId = req.user?.id || 'unknown';
+      const result = await assignmentService.adminOverrideAssignment(id, buddyId, adminUserId);
+      res.json({ 
+        success: true, 
+        message: 'Buddy assigned successfully',
+        data: result
+      });
     } catch (error) {
       next(error);
     }
